@@ -15,7 +15,29 @@ collector_service -> raw_state.json -> state_engine_service -> canonical_state.j
                                                             |-> api_service -> dashboards/e-ink
 ```
 
-Shared artifacts live under `./data` (config, state, history, divergence, service health).
+Shared artifacts live under `./data` (config, state, history, divergence, service health, HA events).
+
+## Quick Start (Developer)
+
+```bash
+# clone + venv
+git clone https://github.com/griffingilreath/rehoboam.git
+cd rehoboam
+python -m venv .venv && source .venv/bin/activate
+
+# install deps
+pip install -r jetson/requirements.txt
+
+# copy sample configs
+for svc in config_sync_service collector_service state_engine_service led_encoder_service api_service ml_service; do
+  cp jetson/$svc/config.example.yaml jetson/$svc/config.yaml
+done
+
+# seed data dir for local testing
+mkdir -p data && cp samples/led_config.json data/led_config.json  # optional
+```
+
+You can now run the pipeline locally (`python jetson/.../main.py --once`) or enable the provided systemd units once configs are filled out.
 
 ## Repository Layout
 
@@ -29,14 +51,14 @@ Shared artifacts live under `./data` (config, state, history, divergence, servic
 | `jetson/ml_service/` | Simple divergence scorer (z-score baseline) that writes `divergence.json`. |
 | `display_clients/iphone_dashboard/` | Static PWA dashboard for iPhone behind the two-way mirror. |
 | `display_clients/eink_client/` | Script that renders grayscale PNGs for e-ink panels. |
-| `epaper/` | Modular e-paper scene runner (backends, CLI, scenes). |
+| `epaper/` | Modular e-paper scene runner (CLI + config-driven service). |
 | `jetson/common/` | Shared utilities (currently heartbeat tracker). |
 
 ## Prerequisites
 
 - Jetson Nano (or any Linux host) with Python 3.9+
-- Home Assistant + MQTT (for helper entities and events)
-- Pi-hole HTTP API access
+- [Home Assistant](https://www.home-assistant.io/) + MQTT (for helper entities and events)
+- [Pi-hole](https://github.com/pi-hole/AdminLTE#http-api) HTTP API access
 - Teensy (Arduino) connected via USB for the LED panel
 - Optional: e-ink panel hardware, iPhone kiosk device
 
@@ -95,13 +117,18 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 
 ## Tests & CI
 
-- Unit tests live under `tests/` (currently covering the ML divergence model). Run them with `python -m unittest discover -s tests -v`.
-- GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) provisions a venv, installs `jetson/requirements.txt`, and executes the test suite on pushes and pull requests.
+- Unit tests live under `tests/` (currently covering the ML divergence model). Run them with:
+  ```bash
+  source .venv/bin/activate
+  python -m unittest discover -s tests -v
+  ```
+- GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) provisions a venv, installs `jetson/requirements.txt`, and executes the test suite on pushes/PRs. Add more suites (lint, integration) by dropping additional YAML files next to it.
 
 ## Observability & Logs
 
 - Each service uses Python's `logging`; set `logging.level` in config or pass `--log-level`.
 - `service_health.json` entries show `status`, `updated_at`, host, pid, and optional error messages—surface them via API `/health` or inspect directly.
+- `events.json` captures normalized Home Assistant events (via `collector_service`) for the e-paper activity feed.
 - Files are written atomically (`.tmp` + rename) to keep downstream readers safe.
 
 ## Documentation Index
@@ -116,5 +143,7 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 - SNMP/managed switch telemetry in `collector_service`.
 - WebSocket push channel in `api_service` + dashboard for smoother updates.
 - Teensy firmware implementation sharing the same repo (e.g., under `firmware/`).
+- E-paper scene scheduler + control surface (e.g., select scenes via API, rotation by time of day).
+- Broader automated testing + schema validators for the shared JSON contracts.
 
 Pull requests or ideas should reference the architecture docs to keep the system coherent.
