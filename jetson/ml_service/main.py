@@ -67,6 +67,7 @@ class DivergenceModel:
         latest = history[-1]
         metrics = self._extract_metrics(latest)
         baseline = self._compute_baseline(history)
+        recommendations = self._generate_recommendations(latest, history)
         scores = {}
         for key in metrics:
             mean, stdev = baseline.get(key, (0.0, 0.0))
@@ -82,7 +83,7 @@ class DivergenceModel:
             level = "divergent"
         elif max_z >= self._threshold * 0.5:
             level = "caution"
-        return {"score": round(max_z, 3), "level": level, "metrics": scores}
+        return {"score": round(max_z, 3), "level": level, "metrics": scores, "recommendations": recommendations}
 
     def _extract_metrics(self, entry: Dict[str, Any]) -> Dict[str, float]:
         leds = entry.get("leds", [])
@@ -113,6 +114,50 @@ class DivergenceModel:
             else:
                 baseline[key] = (statistics.mean(series), statistics.pstdev(series))
         return baseline
+
+    def _generate_recommendations(self, latest: Dict[str, Any], history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Prototype hook: examine latest snapshot for simple action suggestions."""
+        recommendations: List[Dict[str, Any]] = []
+        leds = latest.get("leds", [])
+        timestamp = latest.get("timestamp")
+
+        # Example rule: if any blinds (type=blind) are open while rain is detected in context, suggest closing.
+        context = latest.get("context") or {}
+        rain_expected = context.get("rain_expected")
+        for led in leds:
+            if led.get("type") == "blind":
+                position = led.get("activity_type")
+                if rain_expected and position not in (None, "closed"):
+                    recommendations.append({
+                        "timestamp": timestamp,
+                        "trigger": "rain_expected",
+                        "target": led.get("name"),
+                        "suggestion": "Close blinds",
+                        "confidence": 0.7,
+                        "status": "pending",
+                    })
+
+        # Example rule: if a LED is repeatedly ERROR at same time of day, suggest checking breaker.
+        for led in leds:
+            if led.get("health") == "ERROR":
+                occurrences = [
+                    entry for entry in history[-10:]
+                    if any(
+                        l.get("name") == led.get("name") and l.get("health") == "ERROR"
+                        for l in entry.get("leds", [])
+                    )
+                ]
+                if len(occurrences) >= 3:
+                    recommendations.append({
+                        "timestamp": timestamp,
+                        "trigger": "repeated_error",
+                        "target": led.get("name"),
+                        "suggestion": "Check power/circuit",
+                        "confidence": 0.8,
+                        "status": "pending",
+                    })
+
+        return recommendations
 
 
 class MlService:

@@ -119,6 +119,7 @@ You can now run the pipeline locally (`python jetson/.../main.py --once`) or ena
 | `jetson/led_encoder_service/` | Stream compact frames over serial to the Teensy. |
 | `jetson/api_service/` | FastAPI server exposing `/status`, `/config`, `/history`, `/health`, `/info`. |
 | `jetson/ml_service/` | Simple divergence scorer (z-score baseline) that writes `divergence.json`. |
+| `jetson/ml_service/README.md` | Details the current metrics and the roadmap for predictive suggestions (blinds-before-rain, morning setpoints, breaker recovery). |
 | `display_clients/iphone_dashboard/` | Static PWA dashboard for iPhone behind the two-way mirror. |
 | `display_clients/eink_client/` | Script that renders grayscale PNGs for e-ink panels. |
 | `epaper/` | Modular e-paper scene runner (CLI + config-driven service). |

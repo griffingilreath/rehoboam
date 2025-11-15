@@ -1,80 +1,78 @@
 # ml_service
 
-Future-facing service that reads canonical state history and computes a simple divergence score (z-score based) to approximate the “Rehoboam” anomaly signal described in the architecture doc.
+Analyzes `data/history.json` snapshots produced by `state_engine_service` and emits a divergence score (`data/divergence.json`). The initial implementation uses simple z-scores so it’s transparent and easy to run on a Jetson Nano, but the structure is designed to grow into a more predictive system.
 
-## Responsibilities
+## Current Behavior
 
-- Consume a rolling `history.json` (or similar) produced by `state_engine_service` or a future logging agent.
-- Compute summary metrics (active LED count, average activity, error counts) over time.
-- Compare the latest metrics against a baseline window to produce a z-score-based divergence indicator.
-- Write the result to `divergence.json` (or append back into `canonical_state.json` in a future revision).
-
-## Prerequisites
-
-- Python 3.9+ and `pip install -r jetson/requirements.txt`.
-- A history file containing recent canonical snapshots (e.g., `history.json` with an `entries` array).
-- Optional: Extend the history writer to include more metrics; this service is agnostic to the logging mechanism as long as timestamps and LED fields are present.
-
-## Configuration
-
-1. Copy the template:
-   ```bash
-   cp jetson/ml_service/config.example.yaml jetson/ml_service/config.yaml
-   ```
-2. Adjust:
-   - `data_dir`: base path for canonical/history/divergence files.
-   - `history_window_seconds`: how far back to look for scoring (default 15 minutes).
-   - `baseline_days`: days of history to use when computing baseline statistics.
-   - `zscore_threshold`: z-score threshold for flagging divergence (`>= threshold` → `divergent`, `>= threshold/2` → `caution`).
-   - `poll_interval_seconds`: cadence for recomputing the score.
-
-## Running
-
-```bash
-python jetson/ml_service/main.py \
-  --config jetson/ml_service/config.yaml
-```
-
-- Add `--once` to calculate a single score (good for CI/experiments).
-- Override log level temporarily with `--log-level DEBUG`.
-
-## Output
-
-`divergence.json` example:
-
-```json
-{
-  "generated_at": "2025-11-15T21:10:12.123456+00:00",
-  "timestamp": 1731618612,
-  "score": 1.73,
-  "level": "caution",
-  "metrics": {
-    "active_leds": {"value": 6, "mean": 4.2, "stdev": 0.9, "z": 1.98},
-    "avg_activity": {"value": 0.44, "mean": 0.25, "stdev": 0.07, "z": 2.71},
-    "error_count": {"value": 1, "mean": 0.3, "stdev": 0.4, "z": 1.75}
+- **Features:**
+  - `active_leds` – count of LEDs with activity above a threshold
+  - `avg_activity` – mean activity level across LEDs
+  - `error_count` – number of LEDs in `ERROR`
+- **Baseline:** window of `baseline_days` (configurable) used to compute mean + population standard deviation.
+- **Output:**
+  ```json
+  {
+    "score": 1.73,
+    "level": "caution",
+    "metrics": {
+      "active_leds": { "value": 6, "mean": 4.2, "stdev": 0.9, "z": 1.98 },
+      "avg_activity": { ... },
+      "error_count": { ... }
+    }
   }
-}
+  ```
+- **Consumers:** `/divergence` API endpoint, e-paper divergence scene, dashboards.
+
+## Roadmap: Predictive / Proactive Layer
+
+We plan to extend the ML service in stages:
+
+1. **Context capture** – augment `history.json` with extra signals: weather (rain forecast), occupancy, time of day, HA automations (`events.json`), Pi-hole ratio trends, power events (UPS sensors).
+2. **Pattern learning** – support rule mining / sequence models:
+   - Simple association rules: “If rain forecast + blinds closed daily, but today blinds stayed open → flag.”
+   - Time-of-day preference learning: e.g., recommended heat setpoint detected from past behavior.
+   - Anomaly models beyond z-scores (Isolation Forest, One-Class SVM, or TF Lite models) for “this cluster of signals is off.”
+3. **Recommendations:** write `data/recommendations.json` with entries like:
+   ```json
+   [
+     {
+       "timestamp": 1731900000,
+       "trigger": "rain_expected",
+       "suggestion": "Close living room blinds",
+       "confidence": 0.82,
+       "status": "pending"
+     }
+   ]
+   ```
+   Expose via API (`/recommendations`) so dashboards and HA can act.
+4. **Automation hooks:**
+   - Publish divergence + recommendations via MQTT or HA REST sensors so automations can respond (“if suggestion == blinds_close, run script.close_blinds unless user overrides”).
+   - Provide a feedback loop (mark suggestions as applied/ignored) so the model learns preferences.
+
+## Optional Dependencies
+
+When we enable predictive models, we may add extra requirements:
+
+- `scikit-learn` (rule mining, anomaly detection)
+- `statsmodels` (seasonal decomposition)
+- `tensorflow-cpu` or `tflite-runtime` (for TF Lite inference)
+- `pandas` for richer feature engineering
+
+These will be listed in `jetson/requirements.txt` only when needed; for now the service remains lightweight.
+
+## Config (`config.example.yaml`)
+
+```yaml
+data_dir: ./data
+canonical_state_filename: canonical_state.json
+history_filename: history.json
+output_filename: divergence.json
+poll_interval_seconds: 5
+history_window_seconds: 900
+baseline_days: 7
+zscore_threshold: 2.5
+logging:
+  level: INFO
 ```
 
-You can ingest this into `api_service` (e.g., add `/divergence`) or feed it back into `canonical_state.json` as an extra field per LED/global.
-
-## Operational Notes
-
-- This skeleton intentionally uses straightforward statistics so it runs fast on a Jetson Nano without heavy dependencies.
-- Baseline uses the last `baseline_days` worth of data inside the available history; prune history periodically to keep the file size manageable.
-- If `history.json` is missing, malformed, or empty, the service logs a warning and waits for the next interval.
-- Extend `_extract_metrics` to include more complex signals (per-LED divergence, Pi-hole flux, etc.).
-- For advanced ML, swap `DivergenceModel` with a more sophisticated model (e.g., scikit-learn, TinyML) while keeping the same input/output contract.
-- Each scoring loop reports its health to `service_health.json`, meaning the API `/health` endpoint can highlight ML outages.
-
-## Troubleshooting
-
-| Symptom | Likely cause | Fix |
-| --- | --- | --- |
-| `No history available yet` warnings | Upstream logger not producing history | Implement history writer or adjust paths |
-| `history file is not a list` logs | Unexpected schema | Ensure history has `entries` array or pure list |
-| Score always zero | Baseline stdev is zero (constant data) | Extend baseline window or add more varied metrics |
-
-## Next Step
-
-Integrate `divergence.json` into `api_service` and dashboards (e.g., show a “Rehoboam” cluster or dedicated LED animation). When ready, replace the simple statistical model with a richer anomaly detector while keeping the same file contract.
+Future config additions will include toggles for predictive features (e.g., `enable_recommendations`, `model_path`).
