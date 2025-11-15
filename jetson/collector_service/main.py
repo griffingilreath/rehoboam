@@ -91,6 +91,7 @@ class ServiceConfig:
     events_log_filename: str
     poll_interval_seconds: float
     event_buffer_seconds: float
+    context_entities: List[str]
     home_assistant: HomeAssistantConfig
     pihole: PiHoleConfig
     ping: PingConfig
@@ -161,6 +162,7 @@ def summarize_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     actor = context.get("user_id") or context.get("parent_id") or context.get("source")
     summary = _derive_summary(domain, new_state, attributes, old_state)
     timestamp = event.get("time_fired") or new_state.get("last_changed")
+    context = new_state.get("context") or event.get("context") or {}
     return {
         "timestamp": timestamp,
         "entity_id": entity_id,
@@ -169,6 +171,9 @@ def summarize_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         "state": state,
         "summary": summary,
         "actor": actor,
+        "origin": payload.get("origin"),
+        "context_user_id": context.get("user_id"),
+        "context_parent_id": context.get("parent_id"),
     }
 
 
@@ -386,6 +391,7 @@ class CollectorService:
         self._event_archive: Deque[Dict[str, Any]] = deque()
         self._archive_lock = threading.Lock()
         self._event_log_writer = EventLogWriter(config.events_log_path)
+        self._context_entities = config.context_entities
         self._event_stream = self._start_event_stream()
         self._stop_requested = False
         self._health = ServiceHealthTracker(config.data_dir)
@@ -439,11 +445,13 @@ class CollectorService:
         for led in led_config.get("leds", []):
             name = led.get("name") or f"LED {led.get('index', '?')}"
             devices[name] = self._collect_device_state(led)
+        context_snapshot = self._build_context_snapshot()
         payload = {
             "timestamp": int(time.time()),
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "devices": devices,
             "events": self._event_buffer.snapshot(),
+            "context": context_snapshot,
         }
         serialized = json.dumps(payload, indent=2, sort_keys=False)
         raw_state_path = self._config.raw_state_path
@@ -510,6 +518,51 @@ class CollectorService:
             self._event_archive.clear()
         self._event_log_writer.append_many(batch)
 
+    def _build_context_snapshot(self) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {
+            "timestamp": int(time.time()),
+            "daypart": self._derive_daypart(),
+            "entities": {},
+        }
+        flags = {"occupied": False, "rain_expected": False}
+        for entity_id in self._context_entities:
+            state_obj = self._ha.read_state(entity_id)
+            if not state_obj:
+                continue
+            snapshot["entities"][entity_id] = {
+                "state": state_obj.get("state"),
+                "attributes": state_obj.get("attributes", {}),
+            }
+            self._update_flags_from_entity(flags, entity_id, state_obj)
+        snapshot["flags"] = flags
+        return snapshot
+
+    @staticmethod
+    def _derive_daypart() -> str:
+        hour = datetime.now().hour
+        if 5 <= hour < 12:
+            return "morning"
+        if 12 <= hour < 17:
+            return "afternoon"
+        if 17 <= hour < 22:
+            return "evening"
+        return "night"
+
+    @staticmethod
+    def _update_flags_from_entity(flags: Dict[str, bool], entity_id: str, state_obj: Dict[str, Any]) -> None:
+        domain = entity_id.split(".")[0]
+        state = (state_obj.get("state") or "").lower()
+        attributes = state_obj.get("attributes") or {}
+        if domain in {"person", "device_tracker"}:
+            if state not in {"not_home", "away", ""}:
+                flags["occupied"] = True
+        if domain == "binary_sensor" and "rain" in entity_id:
+            flags["rain_expected"] = state in {"on", "rain", "wet"}
+        if domain == "weather":
+            condition = attributes.get("condition", "").lower()
+            if "rain" in condition or "precip" in condition:
+                flags["rain_expected"] = True
+
 
 def load_service_config(path: Path) -> ServiceConfig:
     if not path.exists():
@@ -527,6 +580,7 @@ def load_service_config(path: Path) -> ServiceConfig:
         events_log_filename=data.get("events_log_filename", DEFAULT_EVENTS_LOG_FILENAME),
         poll_interval_seconds=float(data.get("poll_interval_seconds", 3)),
         event_buffer_seconds=float(data.get("event_buffer_seconds", 10)),
+        context_entities=data.get("context_entities", []) or [],
         home_assistant=home_cfg,
         pihole=pihole_cfg,
         ping=ping_cfg,

@@ -7,6 +7,10 @@ led_config_filename: led_config.json
 events_log_filename: events.json
 poll_interval_seconds: 3
 event_buffer_seconds: 10
+context_entities:
+  - weather.home
+  - person.griffin
+  - binary_sensor.rain_expected
 
 home_assistant:
   base_url: http://homeassistant.local:8123

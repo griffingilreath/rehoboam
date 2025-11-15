@@ -29,6 +29,7 @@ Collects raw device telemetry (reachability, Home Assistant availability, Pi-hol
    - `data_dir`: path containing `led_config.json` and where `raw_state.json` will be written (absolute path recommended in production).
    - `poll_interval_seconds`: loop cadence (1–3 seconds keeps LEDs fresh without spamming HA/Pi-hole).
    - `event_buffer_seconds`: size of the rolling window used for activity counts.
+   - `context_entities`: list of HA entity IDs whose state/attributes should be included in every snapshot (weather, occupancy, power sensors, etc.).
    - `home_assistant`: base URL, token, SSL behavior, and optional mapping for states that count as "available".
    - `pihole`: set `enabled: true`, `base_url`, and `token` (if auth required). Leave disabled for non-Pi-hole setups.
    - `ping`: tweak `timeout_seconds` for devices on slower links.
@@ -80,12 +81,38 @@ python jetson/collector_service/main.py \
   },
   "events": [
     {
-      "timestamp": 1731612343.12,
-      "source": "HomeAssistant",
-      "kind": "state_changed",
-      "entity_id": "light.office_lamp"
+      "timestamp": "2025-11-15T19:39:50+00:00",
+      "entity_id": "light.office_lamp",
+      "friendly_name": "Office Lamp",
+      "domain": "light",
+      "summary": "Brightness → 80%",
+      "actor": "Griffin",
+      "origin": "LOCAL",
+      "context_user_id": "abcdef",
+      "context_parent_id": null
     }
-  ]
+  ],
+  "context": {
+    "timestamp": 1731612345,
+    "daypart": "evening",
+    "entities": {
+      "weather.home": {
+        "state": "rainy",
+        "attributes": {
+          "temperature": 55,
+          "humidity": 82
+        }
+      },
+      "person.griffin": {
+        "state": "home",
+        "attributes": {}
+      }
+    },
+    "flags": {
+      "occupied": true,
+      "rain_expected": true
+    }
+  }
 }
 ```
 
@@ -99,6 +126,7 @@ python jetson/collector_service/main.py \
 - Pi-hole `blocked_ratio` is computed as `ads_blocked_today / max(dns_queries_today, 1)` to avoid divide-by-zero.
 - `ping` behavior adapts to Windows vs. POSIX automatically; ensure ICMP is allowed in your network policies.
 - Detailed HA events are written to `events.json` (configurable) so downstream clients (e.g., e-paper scenes) can render notification feeds.
+- `context_entities` let you snapshot weather/occupancy/power sensors directly from HA so downstream ML models can reason about the environment (rain, daypart, who is home, etc.).
 - Heartbeats are written to `service_health.json` on every successful loop so the API can surface collector status; errors flip the recorded status to `error` for quick diagnosis.
 
 ## Troubleshooting

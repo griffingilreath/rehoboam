@@ -117,6 +117,7 @@ class StateEngineService:
             return
         now = time.time()
         raw_timestamp = raw_state.get("timestamp")
+        context = raw_state.get("context")
         if raw_timestamp and now - raw_timestamp > self._config.health_rules.offline_grace_seconds:
             logging.debug(
                 "Raw state timestamp is stale by %.1fs", now - raw_timestamp
@@ -144,6 +145,7 @@ class StateEngineService:
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "timestamp": int(now),
             "leds": canonical_leds,
+            "context": context or {},
         }
         self._write_canonical(payload)
         self._record_history(payload)
