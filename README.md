@@ -134,6 +134,7 @@ You can now run the pipeline locally (`python jetson/.../main.py --once`) or ena
 | `display_clients/eink_client/` | Script that renders grayscale PNGs for e-ink panels. |
 | `epaper/` | Modular e-paper scene runner (CLI + config-driven service). |
 | `jetson/common/` | Shared utilities (currently heartbeat tracker). |
+| `devtools/dashboard/` | Local-only web UI for inspecting `status/divergence/events` during development. |
 
 ## Prerequisites
 
@@ -195,6 +196,29 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 - **iPhone dashboard:** serve `display_clients/iphone_dashboard` (e.g., `python -m http.server 8080 --directory display_clients/iphone_dashboard`) and point Safari at it; override API base via `localStorage.setItem('rehoboam_api', 'http://jetson-rack.local:8000')` if needed.
 - **E-ink render:** run `python display_clients/eink_client/render.py --api http://jetson-rack.local:8000 --output /tmp/frame.png` on a timer and push the PNG to your panel.
 - **E-paper scenes:** the new `epaper/` module can render animated scenes (standby type-in, activity log, Pi-hole stats, divergence gauge, etc.) either to a fake backend (PNG dumps) or real IT8951 hardware. Run ad hoc via `python -m epaper.cli.main --backend fake --scene divergence` or use the config-driven runner `python -m epaper.service.main --config epaper/config.yaml`. Wiring/build instructions and partial-refresh tips for the IT8951 panel live in `epaper/README.md`, referencing the official Waveshare examples and Greg Meyer’s Python driver[^it8951].
+
+### Dev Dashboard (local-only)
+
+For quick iteration (especially before the Jetson/e-paper are online), use the lightweight dashboard under `devtools/dashboard/`:
+
+```bash
+# from repo root
+python -m http.server 8000
+# in another shell, run the API so /status etc. respond
+python jetson/api_service/main.py --config jetson/api_service/config.yaml
+```
+
+Then visit <http://localhost:8000/devtools/dashboard/> (works on desktop or iPhone). The page reads `/status`, `/divergence`, `/health`, and `data/events.json` to preview the LED grid, Pi-hole stats, context flags, and recommendations. Adjust API/data endpoints by editing `devtools/dashboard/config.js`.
+
+### CLI Snapshot
+
+When SSH’d into the Jetson (or any dev machine with the repo), run the helper script to dump the latest state/divergence/events:
+
+```bash
+python devtools/cli.py --data ./data
+```
+
+This prints the LED grid summary, context flags, divergence score, and recent HA events directly in your terminal, which is handy for remote troubleshooting.
 
 ## Tests & CI
 

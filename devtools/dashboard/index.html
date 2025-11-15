@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rehoboam Dev Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Rehoboam Dev Dashboard</h1>
+        <p>Lightweight status page for local testing. Fetches data from the running API & JSON files.</p>
+      </div>
+      <button id="refresh">Refresh</button>
+    </header>
+
+    <main>
+      <section>
+        <h2>LED Panel Preview</h2>
+        <div id="led-grid" class="grid"></div>
+      </section>
+
+      <section>
+        <h2>Context Snapshot</h2>
+        <div id="context" class="card"></div>
+      </section>
+
+      <section>
+        <h2>Pi-hole / Network Summary</h2>
+        <div id="pihole" class="card"></div>
+      </section>
+
+      <section>
+        <h2>Divergence & Recommendations</h2>
+        <div id="divergence" class="card"></div>
+        <div id="recommendations" class="card"></div>
+      </section>
+
+      <section>
+        <h2>Recent HA Events (raw)</h2>
+        <div id="events" class="card"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Serve with <code>python -m http.server</code> at repo root and open <code>/devtools/dashboard/</code>.</p>
+      <p>Edit <code>devtools/dashboard/config.js</code> to point at remote APIs.</p>
+    </footer>
+
+    <script src="config.js"></script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
