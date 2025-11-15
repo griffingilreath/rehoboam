@@ -1,8 +1,10 @@
 # Rehoboam Rack
 
-Modern status wall that turns telemetry from Home Assistant, Pi-hole, and Jetson-hosted agents into a 16-LED panel, dashboards, and e-ink snapshots. This repo contains the full stack: firmware-friendly encoders, API, ML divergence scoring, and display clients.
+Rehoboam Rack is a modern status wall for a compact home lab: a Jetson-powered backplane drives a 16-LED panel, a mirror-mounted iPhone dashboard, and e-ink scenes so you can see rack health at a glance. This repo contains the full stack—Jetson services, Teensy encoder, dashboards, ML scoring, and dev tooling.
 
-Key design docs live in [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`SERVICES_AND_AGENTS.md`](SERVICES_AND_AGENTS.md). This README summarizes the operational view.
+Physically, the Jetson Nano/SSD/Teensy live in a 10" rack behind the TV. Two Neopixel strips form a 16-dot panel on the wall, an iPhone sits behind a two-way mirror (running the dashboard), and an IT8951 e-paper display can cycle through richer scenes (activity log, divergence, etc.).
+
+Key design docs live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/SERVICES_AND_AGENTS.md`](docs/SERVICES_AND_AGENTS.md). This README summarizes the operational view.
 
 ## System Overview
 
@@ -97,6 +99,57 @@ The Jetson Nano runs `ml_service`, which watches the same history files the LEDs
 
 This ML layer is intentionally lightweight today (z-scores + rule hooks) but structured so we can drop in richer models (Isolation Forest, TF Lite) without changing the surrounding services.
 
+## Contracts & Invariants
+
+When editing services (or letting Cursor refactor code), keep these data contracts intact:
+
+- **`data/led_config.json`**: array of `{index, name, ip?, type, ha_availability_entity?, event_entities?}`. Produced only by `config_sync_service` from HA helpers.
+- **`data/canonical_state.json`**: `{timestamp, generated_at, leds: [{index, name, health, activity_level, activity_type, type}], context}`. Anything consuming LED state should treat this as the source of truth.
+- **`data/history.json`**: append-only list of canonical snapshots. ML relies on the full record, so never truncate fields when writing.
+- **`led_encoder_service` frames**: `{i, h, a, t}` = `{index, health_code, activity_level, activity_type}`. The Teensy firmware expects `0<=i<=15`, `h` in `[0..4]`, `a` float 0-1, `t` integer code.
+- **`service_health.json`**: each service updates/rewrites its own entry; avoid splitting the file per service or consumers won’t see unified health.
+
+## Working Locally vs On the Rack
+
+### Local development (Mac/PC)
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r jetson/requirements.txt
+cp jetson/*/config.example.yaml jetson/*/config.yaml   # edit tokens locally
+python jetson/api_service/main.py --config jetson/api_service/config.yaml --log-level DEBUG
+python -m http.server 8000   # serve dev dashboard
+# in another shell:
+curl http://localhost:8000/devtools/dashboard/  # open in browser/iPhone
+```
+
+Keep configs + runtime JSON in `data/` while testing, but **never commit** them (they’re gitignored). Use the CLI helper (`python devtools/cli.py`) to inspect state over SSH.
+
+### Rack deployment (Jetson Nano)
+
+```bash
+sudo mkdir -p /etc/rehoboam && sudo chown jetson:jetson /etc/rehoboam
+cp jetson/*/config.example.yaml /etc/rehoboam/<service>.yaml   # edit with real tokens/IPs
+
+# create env file for systemd units
+sudo tee /etc/rehoboam.env <<'ENV'
+REHOBOAM_HOME=/opt/rehoboam
+REHOBOAM_VENV=/opt/rehoboam/.venv
+REHOBOAM_DATA=/opt/rehoboam/data
+ENV
+
+cd /opt/rehoboam && python -m venv .venv && source .venv/bin/activate
+pip install -r jetson/requirements.txt
+
+sudo cp systemd/rehoboam-*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now rehoboam-config-sync.service rehoboam-collector.service \
+  rehoboam-state-engine.service rehoboam-led-encoder.service rehoboam-api.service \
+  rehoboam-ml.service rehoboam-epaper.service
+```
+
+Secrets (Home Assistant and Pi-hole tokens) live only in `/etc/rehoboam/*.yaml`; never commit real config files.
+
 ## Quick Start (Developer)
 
 ```bash
@@ -136,6 +189,8 @@ You can now run the pipeline locally (`python jetson/.../main.py --once`) or ena
 | `jetson/common/` | Shared utilities (currently heartbeat tracker). |
 | `devtools/dashboard/` | Local-only web UI for inspecting `status/divergence/events` during development. |
 
+> **Naming note:** The `jetson/` directory contains the backend services, but they run on any Linux host (the Jetson Nano just happens to be the first target).
+
 ## Prerequisites
 
 - Jetson Nano (or any Linux host) with Python 3.9+
@@ -167,6 +222,7 @@ pip install -r epaper/requirements.txt
    - API host/port, CORS origins
    - ML/History retention thresholds
 3. Ensure `data/` is shared by all services so files like `led_config.json`, `raw_state.json`, `canonical_state.json`, `history.json`, `divergence.json`, and `service_health.json` stay in sync.
+   - The `data/` directory in this repo is a runtime scratch space. Only `.gitkeep` lives there in git—do not commit real JSON artifacts or `config.yaml` files (they contain tokens). Keep production configs in `/etc/rehoboam` or another untracked location.
 
 ## Running the Core Services
 
@@ -194,8 +250,8 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 ### Display Clients
 
 - **iPhone dashboard:** serve `display_clients/iphone_dashboard` (e.g., `python -m http.server 8080 --directory display_clients/iphone_dashboard`) and point Safari at it; override API base via `localStorage.setItem('rehoboam_api', 'http://jetson-rack.local:8000')` if needed.
-- **E-ink render:** run `python display_clients/eink_client/render.py --api http://jetson-rack.local:8000 --output /tmp/frame.png` on a timer and push the PNG to your panel.
-- **E-paper scenes:** the new `epaper/` module can render animated scenes (standby type-in, activity log, Pi-hole stats, divergence gauge, etc.) either to a fake backend (PNG dumps) or real IT8951 hardware. Run ad hoc via `python -m epaper.cli.main --backend fake --scene divergence` or use the config-driven runner `python -m epaper.service.main --config epaper/config.yaml`. Wiring/build instructions and partial-refresh tips for the IT8951 panel live in `epaper/README.md`, referencing the official Waveshare examples and Greg Meyer’s Python driver[^it8951].
+- **E-ink render (PNG generator):** run `python display_clients/eink_client/render.py --api http://jetson-rack.local:8000 --output /tmp/frame.png` on a timer and push the PNG to your panel. This is display-agnostic and just generates images.
+- **E-paper scenes (hardware):** the `epaper/` module handles IT8951-specific rendering (fake/SPI/USB backends). Run ad hoc via `python -m epaper.cli.main --backend fake --scene divergence` or use the config-driven runner `python -m epaper.service.main --config epaper/config.yaml`. Wiring/build instructions and partial-refresh tips live in `epaper/README.md`, referencing the official Waveshare examples and Greg Meyer’s Python driver[^it8951].
 
 ### Dev Dashboard (local-only)
 
@@ -238,8 +294,8 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
 
 ## Documentation Index
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): hardware/network overview, data flow, entity modeling.
-- [`SERVICES_AND_AGENTS.md`](SERVICES_AND_AGENTS.md): in-depth specs for every agent, firmware responsibilities, client layouts.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): hardware/network overview, data flow, entity modeling.
+- [`docs/SERVICES_AND_AGENTS.md`](docs/SERVICES_AND_AGENTS.md): in-depth specs for every agent, firmware responsibilities, client layouts.
 - [`docs/home_assistant.md`](docs/home_assistant.md): helper definitions + Lovelace layout for configuring rack ports from HA.
 - Service-specific READMEs under `jetson/*/`, `display_clients/*/`, and `epaper/` cover configuration, operations, and troubleshooting.
 
