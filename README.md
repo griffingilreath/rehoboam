@@ -79,15 +79,13 @@ flowchart LR
 
 To debug, inspect artifacts in this order: `led_config.json` → `raw_state.json` → `canonical_state.json` → `divergence.json`. Each service README describes the exact schema.
 
-### Human-Friendly Story
+### Everyday Examples
 
-1. **You tap a light or automation.** Home Assistant immediately records the change and publishes it on the event bus. Our collector catches the event, notes who triggered it (Griffin, “Sunset automation”, etc.), and increments the activity counter for whichever LED represents that device.
-2. **We sanity-check reality.** While HA tells us “the lamp should be on”, the collector also pings the bridge/IP and asks Pi-hole what the DNS traffic looks like. A string of timeouts or a stalled Pi-hole API is how we know to flip a LED to WARNING/ERROR even if HA hasn’t flagged anything yet.
-3. **The state engine turns data into feelings.** Health codes (OK/WARNING/ERROR/OFFLINE/UNKNOWN) become base colors; activity levels become pulses or wipes; “activity_type” hints tell the Teensy whether to run a light, blind, DNS, or generic animation.
-4. **Everything reads from the same truth.** The LED panel, the mirror/iPhone UI, the e-paper screens, even the CLI scripts all watch the same `canonical_state.json`/`events.json`/`divergence.json`. That’s why you can SSH in, open `data/canonical_state.json`, and see exactly what the UI is showing.
-5. **If something diverges, you know why.** The ML service keeps rolling baselines for “how many LEDs normally blink at 7pm” or “what’s typical Pi-hole QPS on Saturday”. When the score jumps, it writes `divergence.json`, and the display scenes switch to something more dramatic (Rehoboam orb vibes).
+1. **Turn on a lamp:** Home Assistant logs the action, the collector sees the event and pings the lamp’s bridge, the state engine marks the lamp LED as healthy/active, and every UI updates within a second. If pings fail, the LED goes red and `/status` reflects the failure.
+2. **DNS spike:** Pi-hole reports QPS and block ratio; when traffic jumps, the state engine keeps the Pi-hole LED pulsing faster while the divergence score climbs. Dashboards and e-paper scenes pull the same numbers and can show “Pi-hole traffic high, blocked 32%”.
+3. **Automation triggers a blind:** HA sends a `state_changed` event, the collector records “Blind → 50% (Sunrise automation)”, the activity log scene lists it, and the LED briefly animates to show motion.
 
-In short: Home Assistant describes the intent, collectors verify reality, the state engine distills it, and the displays tell the story.
+The key idea: all displays, dashboards, and scripts read the same JSON files, so anyone can understand or debug what’s happening without digging into the code.
 
 ## Quick Start (Developer)
 
