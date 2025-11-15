@@ -34,31 +34,50 @@ Shared artifacts live under `./data` (config, state, history, divergence, servic
 - Heartbeats (`service_health.json`) mean the API and dashboards always know which agents are healthy.  
 - The design mirrors well-known home automations stacks (e.g., [Home Assistant + ESPHome](https://www.home-assistant.io/), [Pi-hole dashboards](https://github.com/pi-hole/AdminLTE)) where helpers define config, collectors gather telemetry, and renderers subscribe to a canonical feed.
 
-### Example Data Flow
+### Example Data Flow (Step-by-Step)
+
+1. **Configuration authoring:**  
+   Home Assistant helpers (input_text/input_select) → `config_sync_service` → `data/led_config.json`
+
+2. **Telemetry & events:**  
+   `config_sync_service` output + Pi-hole API + ping + HA WebSocket → `collector_service` → `data/raw_state.json` + `data/events.json`
+
+3. **State derivation:**  
+   `state_engine_service` reads `led_config.json` + `raw_state.json`, applies health/activity rules → `data/canonical_state.json` and appends to `data/history.json`
+
+4. **Analytics:**  
+   `ml_service` consumes `history.json`, computes divergence → `data/divergence.json`
+
+5. **Distribution:**  
+   - `led_encoder_service` converts `canonical_state.json` into `{i,h,a,t}` frames → Teensy/LED panel  
+   - `api_service` serves `/status`, `/config`, `/history`, `/health`, `/divergence`  
+   - Dashboards/e-paper scenes pull from `canonical_state.json`, `divergence.json`, `events.json`
 
 ```mermaid
-graph TD
-    HA[Home Assistant helpers/events] -->|REST/WebSocket| ConfigSync
+flowchart LR
+    HAConfig[Home Assistant helpers] --> ConfigSync
     ConfigSync -->|writes| LEDConfig[led_config.json]
-    LEDConfig --> Collector
     PiHole[Pi-hole API] --> Collector
-    Collector -->|raw metrics| RawState[raw_state.json]
+    Ping[ICMP ping] --> Collector
+    HAEvents[HA WebSocket] --> Collector
+    LEDConfig --> Collector
+    Collector --> RawState[raw_state.json]
     Collector --> EventsLog[events.json]
-    RawState --> StateEngine
     LEDConfig --> StateEngine
+    RawState --> StateEngine
     StateEngine --> Canonical[canonical_state.json]
     StateEngine --> History[history.json]
     History --> MLService
     MLService --> Divergence[divergence.json]
-    Canonical --> Encoder
+    Canonical --> Encoder[led_encoder_service]
     Canonical --> API
     Divergence --> API
-    Canonical --> Displays[iPhone dashboard / e-ink / e-paper scenes]
+    Canonical --> Displays[iPhone dashboard / e-ink / e-paper]
     Divergence --> Displays
     EventsLog --> Displays
 ```
 
-When something misbehaves, follow the files left-to-right: is `led_config.json` wrong? Is `raw_state.json` missing entries? Did `canonical_state.json` stop updating? Each service README documents the contract so you can drill down quickly.
+To debug, inspect artifacts in this order: `led_config.json` → `raw_state.json` → `canonical_state.json` → `divergence.json`. Each service README describes the exact schema.
 
 ## Quick Start (Developer)
 
