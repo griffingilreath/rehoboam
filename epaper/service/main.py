@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from ..cli.main import pick_backend
+from ..backends.factory import create_backend
 from ..core import modes
 from ..core.display import DisplayManager
 from ..scenes import ActivityLogScene, DivergenceScene, PiHoleScene, StandbyScene
@@ -26,7 +26,8 @@ def load_config(path: Path) -> dict[str, Any]:
 
 
 def run_scene(cfg: dict[str, Any]) -> None:
-    backend = pick_backend(cfg.get("backend", "fake"))
+    backend_cfg = cfg.get("backend_config") or {}
+    backend = create_backend(cfg.get("backend", "fake"), **backend_cfg)
     manager = DisplayManager(backend)
     panel = manager.start()
     try:
@@ -47,7 +48,8 @@ def run_scene(cfg: dict[str, Any]) -> None:
 
 
 def shutdown(cfg: dict[str, Any]) -> None:
-    backend = pick_backend(cfg.get("backend", "fake"))
+    backend_cfg = cfg.get("backend_config") or {}
+    backend = create_backend(cfg.get("backend", "fake"), **backend_cfg)
     manager = DisplayManager(backend)
     try:
         manager.start()

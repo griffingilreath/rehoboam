@@ -18,12 +18,12 @@ _default_out_dir = Path("/tmp/epaper_frames")
 class FakeBackend(Backend):
     """Backend that saves each frame as PNG for easy inspection."""
 
-    def __init__(self, width: int = 1872, height: int = 1404, out_dir: Path | None = None):
+    def __init__(self, width: int = 1872, height: int = 1404, out_dir: Path | None = None, rotation: int = 0):
         self.width = width
         self.height = height
         self.out_dir = out_dir or _default_out_dir
         self._counter = itertools.count(1)
-        self._panel = PanelInfo(width=width, height=height)
+        self._panel = PanelInfo(width=width, height=height, rotation=rotation)
 
     def open(self) -> PanelInfo:
         self.out_dir.mkdir(parents=True, exist_ok=True)

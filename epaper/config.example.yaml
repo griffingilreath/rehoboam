@@ -1,5 +1,8 @@
 backend: fake
+backend_config: {}
+
 scene: standby
 text: REHOBOAM
 font: null
+
 log_level: INFO

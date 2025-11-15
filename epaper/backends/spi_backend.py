@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Tuple
+from typing import Any, Tuple
 
 from PIL import Image
 
 try:
-    from IT8951.display import AutoEPDDisplay
-    from IT8951 import constants
+    from IT8951.display import AutoEPDDisplay  # type: ignore[import-not-found]
+    from IT8951 import constants  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - optional dependency
     AutoEPDDisplay = None
     constants = None
@@ -21,7 +21,7 @@ LOGGER = logging.getLogger(__name__)
 class SPIBackend(Backend):
     """Thin wrapper around the IT8951 Python driver."""
 
-    def __init__(self) -> None:
+    def __init__(self, **_: Any) -> None:
         if AutoEPDDisplay is None:
             raise RuntimeError(
                 "IT8951 library not installed. Install `it8951` to use SPIBackend."

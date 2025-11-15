@@ -4,9 +4,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from ..backends.fake_backend import FakeBackend
-from ..backends.spi_backend import SPIBackend  # type: ignore  # optional dependency
-from ..backends.usb_backend import USBBackend
+from ..backends.factory import create_backend
 from ..core.display import DisplayManager
 from ..core import modes
 from ..scenes import ActivityLogScene, DivergenceScene, PiHoleScene, StandbyScene
@@ -14,15 +12,26 @@ from ..scenes import ActivityLogScene, DivergenceScene, PiHoleScene, StandbyScen
 LOGGER = logging.getLogger(__name__)
 
 
-def pick_backend(name: str):
-    name = name.lower()
-    if name == "fake":
-        return FakeBackend()
-    if name == "spi":
-        return SPIBackend()
-    if name == "usb":
-        return USBBackend()
-    raise SystemExit(f"Unknown backend '{name}'")
+def parse_backend_options(items: list[str]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep:
+            raise SystemExit(f"Invalid backend option '{item}'. Use key=value.")
+        key = key.strip()
+        value = value.strip()
+        if key == "size" and "x" in value:
+            try:
+                w, h = value.lower().split("x", 1)
+                result[key] = (int(w), int(h))
+                continue
+            except ValueError:
+                raise SystemExit(f"Invalid size value '{value}'. Expected WIDTHxHEIGHT.")
+        if value.isdigit():
+            result[key] = int(value)
+        else:
+            result[key] = value
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,12 +46,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--text", default="REHOBOAM", help="Text for standby scene")
     parser.add_argument("--font", help="Path to TTF font", default=None)
     parser.add_argument("--log-level", default="INFO")
+    parser.add_argument(
+        "--backend-option",
+        action="append",
+        default=[],
+        help="Override backend setting (key=value, e.g., device=/dev/sg1, size=1872x1404)",
+    )
     parser.add_argument("--shutdown", action="store_true", help="Only send standby to panel")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
 
-    backend = pick_backend(args.backend)
+    backend_kwargs = parse_backend_options(args.backend_option)
+    backend = create_backend(args.backend, **backend_kwargs)
     manager = DisplayManager(backend)
 
     if args.shutdown:
