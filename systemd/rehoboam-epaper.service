@@ -1,0 +1,17 @@
+[Unit]
+Description=Rehoboam E-Paper Scene Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rehoboam.env
+WorkingDirectory=${REHOBOAM_HOME}
+ExecStart=${REHOBOAM_VENV}/bin/python -m epaper.service.main --config epaper/config.yaml
+ExecStop=${REHOBOAM_VENV}/bin/python -m epaper.service.main --config epaper/config.yaml --shutdown
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

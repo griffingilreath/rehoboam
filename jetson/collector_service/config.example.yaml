@@ -4,6 +4,7 @@
 data_dir: ./data
 raw_state_filename: raw_state.json
 led_config_filename: led_config.json
+events_log_filename: events.json
 poll_interval_seconds: 3
 event_buffer_seconds: 10
 

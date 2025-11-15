@@ -33,6 +33,7 @@ Collects raw device telemetry (reachability, Home Assistant availability, Pi-hol
    - `pihole`: set `enabled: true`, `base_url`, and `token` (if auth required). Leave disabled for non-Pi-hole setups.
    - `ping`: tweak `timeout_seconds` for devices on slower links.
    - `events`: set `enabled: false` to skip websocket streaming (e.g., offline dev environments).
+- `events_log_filename`: JSON file that accumulates detailed HA events for dashboards/e-paper scenes (default `events.json`).
 
 ### LED-Specific Fields
 
@@ -97,6 +98,7 @@ python jetson/collector_service/main.py \
 - `events_last_window` counts only the entity IDs explicitly listed in `event_entities`. Leave the field blank if you don't care about event-driven activity for that LED.
 - Pi-hole `blocked_ratio` is computed as `ads_blocked_today / max(dns_queries_today, 1)` to avoid divide-by-zero.
 - `ping` behavior adapts to Windows vs. POSIX automatically; ensure ICMP is allowed in your network policies.
+- Detailed HA events are written to `events.json` (configurable) so downstream clients (e.g., e-paper scenes) can render notification feeds.
 - Heartbeats are written to `service_health.json` on every successful loop so the API can surface collector status; errors flip the recorded status to `error` for quick diagnosis.
 
 ## Troubleshooting

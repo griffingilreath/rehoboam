@@ -1,0 +1,3 @@
+Pillow>=10.3
+# Optional: install it8951 if using the SPI backend
+it8951>=0.0.5 ; platform_system == "Linux"

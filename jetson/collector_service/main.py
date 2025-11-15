@@ -1,3 +1,26 @@
+class EventLogWriter:
+    """Persist recent detailed events for dashboards/e-paper scenes."""
+
+    def __init__(self, path: Path, max_entries: int = 200) -> None:
+        self._path = path
+        self._max_entries = max_entries
+        self._lock = threading.Lock()
+
+    def append_many(self, events: List[Dict[str, Any]]) -> None:
+        if not events:
+            return
+        with self._lock:
+            existing: List[Dict[str, Any]] = []
+            if self._path.exists():
+                try:
+                    existing = json.loads(self._path.read_text(encoding="utf-8")).get("events", [])
+                except Exception:
+                    logging.exception("Failed to read existing events log")
+            merged = (existing + events)[-self._max_entries :]
+            payload = {"events": merged}
+            tmp = self._path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            tmp.replace(self._path)
 #!/usr/bin/env python3
 """Collect raw telemetry for each LED-defined device."""
 from __future__ import annotations
@@ -15,7 +38,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Deque, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
@@ -27,6 +50,7 @@ from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 DEFAULT_CONFIG_PATH = "jetson/collector_service/config.yaml"
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
+DEFAULT_EVENTS_LOG_FILENAME = "events.json"
 
 
 @dataclass
@@ -64,6 +88,7 @@ class ServiceConfig:
     data_dir: Path
     led_config_filename: str
     raw_state_filename: str
+    events_log_filename: str
     poll_interval_seconds: float
     event_buffer_seconds: float
     home_assistant: HomeAssistantConfig
@@ -79,6 +104,10 @@ class ServiceConfig:
     @property
     def raw_state_path(self) -> Path:
         return self.data_dir / self.raw_state_filename
+
+    @property
+    def events_log_path(self) -> Path:
+        return self.data_dir / self.events_log_filename
 
 
 class EventBuffer:
@@ -114,6 +143,64 @@ class EventBuffer:
         threshold = now - self._max_age
         while self._events and self._events[0]["timestamp"] < threshold:
             self._events.popleft()
+
+
+def summarize_event(payload: Dict[str, Any]) -> Dict[str, Any]:
+    event = payload.get("event", {})
+    data = event.get("data") or {}
+    entity_id = data.get("entity_id")
+    if not entity_id:
+        return {}
+    domain = entity_id.split(".")[0]
+    new_state = data.get("new_state") or {}
+    old_state = data.get("old_state") or {}
+    attributes = new_state.get("attributes") or {}
+    friendly = attributes.get("friendly_name") or entity_id
+    state = new_state.get("state")
+    context = new_state.get("context") or event.get("context") or {}
+    actor = context.get("user_id") or context.get("parent_id") or context.get("source")
+    summary = _derive_summary(domain, new_state, attributes, old_state)
+    timestamp = event.get("time_fired") or new_state.get("last_changed")
+    return {
+        "timestamp": timestamp,
+        "entity_id": entity_id,
+        "friendly_name": friendly,
+        "domain": domain,
+        "state": state,
+        "summary": summary,
+        "actor": actor,
+    }
+
+
+def _derive_summary(
+    domain: str,
+    new_state: Dict[str, Any],
+    attributes: Dict[str, Any],
+    old_state: Dict[str, Any],
+) -> str:
+    state = new_state.get("state")
+    if domain == "light":
+        brightness = attributes.get("brightness")
+        if brightness is not None:
+            pct = round((brightness / 255) * 100)
+            return f"Brightness → {pct}%"
+        return f"State → {state}"
+    if domain == "cover":
+        position = attributes.get("current_position")
+        if position is not None:
+            return f"Position → {position}%"
+    if domain == "switch":
+        return f"Switched {state}"
+    if domain == "climate":
+        temp = attributes.get("temperature")
+        if temp is not None:
+            return f"Setpoint → {temp}°"
+    if domain == "sensor":
+        return f"Reading → {attributes.get('state_class', state)}"
+    old = old_state.get("state")
+    if old is not None and state != old:
+        return f"{old} → {state}"
+    return f"State → {state}"
 
 
 class HomeAssistantRestClient:
@@ -221,10 +308,10 @@ class Pinger:
 class HomeAssistantEventStream(threading.Thread):
     """Background thread that listens to HA websocket events."""
 
-    def __init__(self, config: HomeAssistantConfig, buffer: EventBuffer, event_config: EventConfig) -> None:
+    def __init__(self, config: HomeAssistantConfig, handler: Callable[[Dict[str, Any]], None], event_config: EventConfig) -> None:
         super().__init__(daemon=True)
         self._config = config
-        self._buffer = buffer
+        self._handler = handler
         self._event_config = event_config
         self._stop = threading.Event()
 
@@ -259,13 +346,10 @@ class HomeAssistantEventStream(threading.Thread):
                 entity_id = data.get("entity_id")
                 if not entity_id:
                     continue
-                buffered = {
-                    "timestamp": time.time(),
-                    "source": "HomeAssistant",
-                    "kind": event.get("event_type", "state_changed"),
-                    "entity_id": entity_id,
-                }
-                self._buffer.add(buffered)
+                summary = summarize_event(payload)
+                if summary:
+                    summary.setdefault("timestamp_epoch", time.time())
+                    self._handler(summary)
         finally:
             ws.close()
 
@@ -299,6 +383,9 @@ class CollectorService:
         self._pinger = Pinger(config.ping)
         self._pihole = PiHoleClient(config.pihole)
         self._event_buffer = EventBuffer(config.event_buffer_seconds)
+        self._event_archive: Deque[Dict[str, Any]] = deque()
+        self._archive_lock = threading.Lock()
+        self._event_log_writer = EventLogWriter(config.events_log_path)
         self._event_stream = self._start_event_stream()
         self._stop_requested = False
         self._health = ServiceHealthTracker(config.data_dir)
@@ -308,9 +395,18 @@ class CollectorService:
         if not self._config.events.enabled:
             logging.info("Event stream disabled")
             return None
-        stream = HomeAssistantEventStream(self._config.home_assistant, self._event_buffer, self._config.events)
+        stream = HomeAssistantEventStream(
+            self._config.home_assistant,
+            handler=self._handle_event,
+            event_config=self._config.events,
+        )
         stream.start()
         return stream
+
+    def _handle_event(self, event: Dict[str, Any]) -> None:
+        self._event_buffer.add(event)
+        with self._archive_lock:
+            self._event_archive.append(event)
 
     def request_stop(self, *_: Any) -> None:
         logging.info("Stop requested; finishing current cycle")
@@ -357,6 +453,7 @@ class CollectorService:
         tmp.replace(raw_state_path)
         logging.info("Wrote %s for %d devices", raw_state_path, len(devices))
         self._health.mark_running(self._identity)
+        self._flush_event_log()
 
     def _load_led_config(self) -> Optional[Dict[str, Any]]:
         path = self._config.led_config_path
@@ -405,6 +502,14 @@ class CollectorService:
             return [str(entity).strip() for entity in entities if str(entity).strip()]
         return []
 
+    def _flush_event_log(self) -> None:
+        with self._archive_lock:
+            if not self._event_archive:
+                return
+            batch = list(self._event_archive)
+            self._event_archive.clear()
+        self._event_log_writer.append_many(batch)
+
 
 def load_service_config(path: Path) -> ServiceConfig:
     if not path.exists():
@@ -419,6 +524,7 @@ def load_service_config(path: Path) -> ServiceConfig:
         data_dir=Path(data.get("data_dir", "./data")).expanduser().resolve(),
         led_config_filename=data.get("led_config_filename", DEFAULT_LED_CONFIG_FILENAME),
         raw_state_filename=data.get("raw_state_filename", DEFAULT_RAW_STATE_FILENAME),
+        events_log_filename=data.get("events_log_filename", DEFAULT_EVENTS_LOG_FILENAME),
         poll_interval_seconds=float(data.get("poll_interval_seconds", 3)),
         event_buffer_seconds=float(data.get("event_buffer_seconds", 10)),
         home_assistant=home_cfg,

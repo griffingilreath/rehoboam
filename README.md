@@ -29,6 +29,7 @@ Shared artifacts live under `./data` (config, state, history, divergence, servic
 | `jetson/ml_service/` | Simple divergence scorer (z-score baseline) that writes `divergence.json`. |
 | `display_clients/iphone_dashboard/` | Static PWA dashboard for iPhone behind the two-way mirror. |
 | `display_clients/eink_client/` | Script that renders grayscale PNGs for e-ink panels. |
+| `epaper/` | Modular e-paper scene runner (backends, CLI, scenes). |
 | `jetson/common/` | Shared utilities (currently heartbeat tracker). |
 
 ## Prerequisites
@@ -47,6 +48,11 @@ pip install -r jetson/requirements.txt
 ```
 
 Service-specific dependencies are documented in each directory (e.g., `display_clients/eink_client/requirements.txt`).
+If you plan to prototype the e-paper scenes, install the Pillow/IT8951 extras:
+
+```bash
+pip install -r epaper/requirements.txt
+```
 
 ## Configuration & Data Directory
 
@@ -85,6 +91,7 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 
 - **iPhone dashboard:** serve `display_clients/iphone_dashboard` (e.g., `python -m http.server 8080 --directory display_clients/iphone_dashboard`) and point Safari at it; override API base via `localStorage.setItem('rehoboam_api', 'http://jetson-rack.local:8000')` if needed.
 - **E-ink render:** run `python display_clients/eink_client/render.py --api http://jetson-rack.local:8000 --output /tmp/frame.png` on a timer and push the PNG to your panel.
+- **E-paper scenes:** the new `epaper/` module can render animated scenes (standby type-in, activity log, Pi-hole stats, divergence gauge, etc.) either to a fake backend (PNG dumps) or real IT8951 hardware. Run ad hoc via `python -m epaper.cli.main --backend fake --scene divergence` or use the config-driven runner `python -m epaper.service.main --config epaper/config.yaml`.
 
 ## Tests & CI
 

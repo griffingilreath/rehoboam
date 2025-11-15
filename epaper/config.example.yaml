@@ -1,0 +1,5 @@
+backend: fake
+scene: standby
+text: REHOBOAM
+font: null
+log_level: INFO
