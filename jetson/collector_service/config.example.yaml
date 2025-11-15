@@ -1,0 +1,32 @@
+# Example configuration for collector_service.
+# Copy to config.yaml and adjust for your network.
+
+data_dir: ./data
+raw_state_filename: raw_state.json
+led_config_filename: led_config.json
+poll_interval_seconds: 3
+event_buffer_seconds: 10
+
+home_assistant:
+  base_url: http://homeassistant.local:8123
+  token: "REPLACE_WITH_LONG_LIVED_TOKEN"
+  timeout_seconds: 10
+  verify_ssl: true
+  availability_states:
+    on: true
+    off: false
+
+pihole:
+  enabled: true
+  base_url: http://pihole.local
+  api_path: /admin/api.php
+  token: "REPLACE_WITH_PIHOLE_TOKEN"
+  timeout_seconds: 5
+
+ping:
+  count: 1
+  timeout_seconds: 1
+
+events:
+  enabled: true
+  reconnect_delay_seconds: 5

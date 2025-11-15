@@ -1,0 +1,123 @@
+:root {
+  color-scheme: dark;
+  font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ok: #3ddc84;
+  --warning: #f6c343;
+  --error: #ff6b6b;
+  --offline: #5c6f82;
+  --unknown: #979dac;
+  --bg: rgba(10, 12, 16, 0.95);
+  --panel: rgba(25, 29, 39, 0.8);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 1.5rem;
+  min-height: 100vh;
+  background: radial-gradient(circle at top, rgba(34, 41, 61, 0.9), var(--bg));
+  color: white;
+}
+
+header, footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.status-summary {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.9rem;
+}
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+section {
+  background: var(--panel);
+  border-radius: 1rem;
+  padding: 1rem;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.led-card {
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.led-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.led-card .meta {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.led-card .activity {
+  height: 6px;
+  margin-top: 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  position: relative;
+}
+
+.led-card .activity span {
+  position: absolute;
+  height: 100%;
+  left: 0;
+  top: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.5), white);
+}
+
+.card {
+  min-height: 100px;
+}
+
+footer button {
+  padding: 0.6rem 1.2rem;
+  border-radius: 999px;
+  border: none;
+  font-size: 1rem;
+  color: white;
+  background: linear-gradient(120deg, #3391ff, #5f59f7);
+  cursor: pointer;
+}
+
+footer button:active {
+  transform: scale(0.98);
+}
+
+.health-ok { border-left: 4px solid var(--ok); }
+.health-warning { border-left: 4px solid var(--warning); }
+.health-error { border-left: 4px solid var(--error); }
+.health-offline { border-left: 4px solid var(--offline); }
+.health-unknown { border-left: 4px solid var(--unknown); }

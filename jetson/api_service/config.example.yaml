@@ -1,0 +1,16 @@
+# Example configuration for api_service.
+data_dir: ./data
+led_config_filename: led_config.json
+canonical_state_filename: canonical_state.json
+history_filename: history.json
+health_filename: service_health.json
+divergence_filename: divergence.json
+host: 0.0.0.0
+port: 8000
+reload: false
+cors_origins:
+  - "http://localhost:3000"
+  - "http://jetson-rack.local"
+cache_ttl_seconds: 0.5
+logging:
+  level: INFO

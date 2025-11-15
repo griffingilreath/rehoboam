@@ -1,0 +1,15 @@
+[Unit]
+Description=Rehoboam Config Sync Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rehoboam.env
+WorkingDirectory=${REHOBOAM_HOME}
+ExecStart=${REHOBOAM_VENV}/bin/python jetson/config_sync_service/main.py --config jetson/config_sync_service/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

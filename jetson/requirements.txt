@@ -1,0 +1,6 @@
+PyYAML>=6.0
+requests>=2.32
+websocket-client>=1.8
+pyserial>=3.5
+fastapi>=0.115
+uvicorn[standard]>=0.30

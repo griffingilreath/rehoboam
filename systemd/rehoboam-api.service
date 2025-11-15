@@ -1,0 +1,16 @@
+[Unit]
+Description=Rehoboam API Service
+After=network-online.target
+Wants=network-online.target
+Requires=rehoboam-state-engine.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rehoboam.env
+WorkingDirectory=${REHOBOAM_HOME}
+ExecStart=${REHOBOAM_VENV}/bin/python jetson/api_service/main.py --config jetson/api_service/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

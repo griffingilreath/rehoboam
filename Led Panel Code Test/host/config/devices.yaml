@@ -1,0 +1,12 @@
+# Device definitions for the host supervisor.
+# Populate with monitors to drive notifications and alarms.
+
+# examples:
+# router:
+#   kind: ping
+#   target: 192.168.1.1
+#   priority: critical
+# nas:
+#   kind: ping
+#   target: 192.168.1.100
+#   priority: high

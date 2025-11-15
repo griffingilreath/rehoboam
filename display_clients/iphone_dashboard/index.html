@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rehoboam Rack Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Rehoboam Rack</h1>
+      <div class="status-summary">
+        <div id="divergence-level" class="chip">Divergence: --</div>
+        <div id="last-update" class="chip">Updated: --</div>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <h2>LED Panel Status</h2>
+        <div id="led-grid" class="grid"></div>
+      </section>
+      <section>
+        <h2>Pi-hole Activity</h2>
+        <div id="pihole-summary" class="card">No data yet.</div>
+      </section>
+      <section>
+        <h2>Service Health</h2>
+        <div id="service-health" class="card">Health data unavailable.</div>
+      </section>
+    </main>
+
+    <footer>
+      <button id="refresh-button">Refresh Now</button>
+      <span>API: <span id="api-endpoint">/status</span></span>
+    </footer>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

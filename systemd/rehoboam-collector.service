@@ -1,0 +1,16 @@
+[Unit]
+Description=Rehoboam Collector Service
+After=network-online.target
+Wants=network-online.target
+Requires=rehoboam-config-sync.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rehoboam.env
+WorkingDirectory=${REHOBOAM_HOME}
+ExecStart=${REHOBOAM_VENV}/bin/python jetson/collector_service/main.py --config jetson/collector_service/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+# Example configuration for led_encoder_service.
+data_dir: ./data
+canonical_state_filename: canonical_state.json
+serial_device: /dev/ttyACM0
+baud_rate: 115200
+frame_interval_seconds: 0.2
+health_code_map:
+  OK: 0
+  WARNING: 1
+  ERROR: 2
+  OFFLINE: 3
+  UNKNOWN: 4
+activity_type_map:
+  none: 0
+  light_change: 1
+  dns_queries: 2
+  blind_move: 3
+  generic_event: 4
+logging:
+  level: INFO

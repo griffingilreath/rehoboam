@@ -1,0 +1,25 @@
+# Example configuration for the config_sync_service.
+# Copy this file to config.yaml and update the values to match your Home Assistant setup.
+data_dir: ./data
+poll_interval_seconds: 30
+led_count: 16
+
+home_assistant:
+  base_url: http://homeassistant.local:8123
+  token: "REPLACE_WITH_LONG_LIVED_TOKEN"
+  timeout_seconds: 10
+  verify_ssl: true
+
+templates:
+  name: input_text.led{index}_name
+  ip: input_text.led{index}_ip
+  type: input_select.led{index}_type
+  ha_availability_entity: input_text.led{index}_ha_availability_entity
+  extra_fields:
+    notes: input_text.led{index}_notes
+
+defaults:
+  type: unknown
+
+logging:
+  level: INFO

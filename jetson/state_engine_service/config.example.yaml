@@ -1,0 +1,26 @@
+# Example configuration for state_engine_service.
+# Copy to config.yaml and adjust thresholds to your environment.
+data_dir: ./data
+led_config_filename: led_config.json
+raw_state_filename: raw_state.json
+canonical_state_filename: canonical_state.json
+poll_interval_seconds: 2
+history_enabled: true
+history_filename: history.json
+history_max_entries: 1800   # keep ~1 hour at 2s intervals
+history_retention_seconds: 86400
+
+health_rules:
+  ping_timeout_ms: 500
+  warning_latency_ms: 150
+  offline_grace_seconds: 30
+  require_availability_entity: false
+
+activity_rules:
+  decay_per_second: 0.15
+  event_boost: 0.3
+  pihole_qps_scale: 0.02
+  max_activity: 1.0
+
+logging:
+  level: INFO
