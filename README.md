@@ -205,7 +205,8 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): hardware/network overview, data flow, entity modeling.
 - [`SERVICES_AND_AGENTS.md`](SERVICES_AND_AGENTS.md): in-depth specs for every agent, firmware responsibilities, client layouts.
-- Service-specific READMEs under `jetson/*/` and `display_clients/*/` cover configuration, operations, and troubleshooting.
+- [`docs/home_assistant.md`](docs/home_assistant.md): helper definitions + Lovelace layout for configuring rack ports from HA.
+- Service-specific READMEs under `jetson/*/`, `display_clients/*/`, and `epaper/` cover configuration, operations, and troubleshooting.
 
 ## Future Enhancements
 
