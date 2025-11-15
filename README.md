@@ -238,7 +238,7 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 
 Pull requests or ideas should reference the architecture docs to keep the system coherent.
 
-[^ha]: [Home Assistant](https://www.home-assistant.io/) documentation (helpers, automations, REST API).
+[^ha]: [Home Assistant](https://www.home-assistant.io/) documentation (helpers, automations, REST API) and [Lovelace UI](https://www.home-assistant.io/lovelace/).
 [^pihole]: [Pi-hole HTTP API reference](https://github.com/pi-hole/AdminLTE#http-api).
-[^teensy]: [Teensy 3.x reference](https://www.pjrc.com/teensy/techspecs.html) + [FastLED library](https://github.com/FastLED/FastLED) for LED animations.
-[^it8951]: See [Waveshare’s IT8951 reference repo](https://github.com/waveshare/IT8951) for waveform timings/USB tooling and [`GregDMeyer/IT8951`](https://github.com/GregDMeyer/IT8951) for the Python driver used by the SPI backend.
+[^teensy]: [Teensy 3.x hardware reference](https://www.pjrc.com/teensy/techspecs.html), [ArduinoJson](https://arduinojson.org/), and [FastLED library](https://github.com/FastLED/FastLED) for LED animations.
+[^it8951]: See [Waveshare’s IT8951 reference repo](https://github.com/waveshare/IT8951) for waveform timings/USB tooling and [`GregDMeyer/IT8951`](https://github.com/GregDMeyer/IT8951) for the Python driver wrapped by `SPIBackend`.
