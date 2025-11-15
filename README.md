@@ -87,6 +87,16 @@ To debug, inspect artifacts in this order: `led_config.json` → `raw_state.json
 
 The key idea: all displays, dashboards, and scripts read the same JSON files, so anyone can understand or debug what’s happening without digging into the code.
 
+### Predictive ML on the Jetson
+
+The Jetson Nano runs `ml_service`, which watches the same history files the LEDs do and adds a “brain” layer:
+
+- **Baseline vs live state:** Every canonical snapshot (with context like daypart, weather, occupancy) is appended to `history.json`. The ML service compares the latest metrics to rolling baselines and emits a divergence score (`divergence.json`) plus early recommendations (`recommendations.json`).  
+- **Proactive hooks:** If repeated errors occur on the same port, the service can suggest “check power/circuit.” If rain is expected but blinds didn’t close, it can suggest closing them. These hooks feed `/divergence` and `/recommendations` so dashboards, e-paper scenes, or Home Assistant automations can alert or act.
+- **Future automation:** The HA site can subscribe (REST/MQTT) and decide whether to act automatically (e.g., run a script to close blinds) or simply surface the suggestion. Because snapshots carry context, the model can learn preferences over time (morning heat setpoints, network health patterns, etc.).
+
+This ML layer is intentionally lightweight today (z-scores + rule hooks) but structured so we can drop in richer models (Isolation Forest, TF Lite) without changing the surrounding services.
+
 ## Quick Start (Developer)
 
 ```bash
