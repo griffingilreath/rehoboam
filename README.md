@@ -208,6 +208,25 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 - [`docs/home_assistant.md`](docs/home_assistant.md): helper definitions + Lovelace layout for configuring rack ports from HA.
 - Service-specific READMEs under `jetson/*/`, `display_clients/*/`, and `epaper/` cover configuration, operations, and troubleshooting.
 
+## Rack Hardware & Inspiration
+
+- [Project MINI RACK by Jeff Geerling](https://github.com/geerlingguy/mini-rack) – general guidance on 10\" racks, PDUs, cable management, and build showcases.
+- MakerWorld models used in this build:
+  - [0.5U keyboard drawer for 10\" rack (YaMR)](https://makerworld.com/en/models/1963576-0-5u-keyboard-drawer-for-10inch-rack-yamr)
+  - [10\" Keystone patch panel (8 ports)](https://makerworld.com/en/models/1656992-10-inch-keystone-patchpanel-x8-ports)
+  - [10\" server rack cable duct](https://makerworld.com/en/models/1090864-10-inch-server-rack-cable-duct)
+  - [Netgear GS308E screwless 10\" rack mount](https://makerworld.com/en/models/1859737-netgear-gs308e-screwless-10-inch-rack-mount)
+  - [Saturn V-U DIY 10\" network rack](https://makerworld.com/en/models/1381701-saturn-v-u-diy-10-network-rack)
+  - [10\" rack-mount ears for 4Leaf 6-plug PDU](https://makerworld.com/en/models/1801913-10in-rack-mount-ears-for-4leaf-6-plug-pdu)
+- Amazon hardware references:
+  - [10\" rack chassis](https://www.amazon.com/dp/B07DZZWD9W?ref=ppx_yo2ov_dt_b_fed_asin_title)
+  - [10\" rack shelf](https://www.amazon.com/dp/B0C3VLNLXY?ref=ppx_yo2ov_dt_b_fed_asin_title)
+  - [Netgear GS108 switch](https://www.amazon.com/dp/B00MPVR50A?ref=ppx_yo2ov_dt_b_fed_asin_title)
+  - [Cable raceway packs (6\" and 12\")](https://www.amazon.com/dp/B0DLHDHFMG?ref=ppx_yo2ov_dt_b_fed_asin_title)
+  - [Compact PDU / power strip](https://www.amazon.com/dp/B0CP9P47F5?ref=ppx_yo2ov_dt_b_fed_asin_title)
+  - [Short Cat6 patch cables](https://www.amazon.com/dp/B00YHPFG9O?ref=ppx_yo2ov_dt_b_fed_asin_title)
+  - [USB-C PD trigger board](https://www.amazon.com/dp/B071RLRW83?ref=ppx_yo2ov_dt_b_fed_asin_title)
+
 ## Future Enhancements
 
 - Richer ML/anomaly detection (swap `DivergenceModel` with more advanced time-series models).
@@ -219,4 +238,7 @@ The host-side encoder is ready; pair it with a Teensy sketch that parses frames 
 
 Pull requests or ideas should reference the architecture docs to keep the system coherent.
 
+[^ha]: [Home Assistant](https://www.home-assistant.io/) documentation (helpers, automations, REST API).
+[^pihole]: [Pi-hole HTTP API reference](https://github.com/pi-hole/AdminLTE#http-api).
+[^teensy]: [Teensy 3.x reference](https://www.pjrc.com/teensy/techspecs.html) + [FastLED library](https://github.com/FastLED/FastLED) for LED animations.
 [^it8951]: See [Waveshare’s IT8951 reference repo](https://github.com/waveshare/IT8951) for waveform timings/USB tooling and [`GregDMeyer/IT8951`](https://github.com/GregDMeyer/IT8951) for the Python driver used by the SPI backend.
