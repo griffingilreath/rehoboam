@@ -17,6 +17,49 @@ collector_service -> raw_state.json -> state_engine_service -> canonical_state.j
 
 Shared artifacts live under `./data` (config, state, history, divergence, service health, HA events).
 
+## How the Pieces Fit Together
+
+| Phase | Responsible Service(s) | Inputs | Output Artifact | Notes |
+| ----- | ---------------------- | ------ | ----------------| ----- |
+| 1. Configuration | `config_sync_service` | Home Assistant helper entities (`input_text.*`, `input_select.*`) | `data/led_config.json` | Cursor-friendly JSON describing each LED slot (name, IP, HA availability entity, event entities, type). |
+| 2. Telemetry & Events | `collector_service` | `led_config.json`, ICMP ping, Pi-hole HTTP API, Home Assistant WebSocket/MQTT | `data/raw_state.json`, `data/events.json` | Each poll window records reachability, latency, HA availability, Pi-hole stats, plus a normalized stream of Home Assistant events for downstream visualizations. |
+| 3. Canonical State | `state_engine_service` | `led_config.json`, `raw_state.json` | `data/canonical_state.json`, `data/history.json` | Health rules (`OK/WARNING/ERROR/OFFLINE`) and activity levels (`0.0–1.0`) are computed per LED. Every snapshot is appended to a rolling history used by ML, displays, and dashboards. |
+| 4. Divergence / Analytics | `ml_service` | `history.json` | `data/divergence.json` | A simple z-score model compares the latest activity against rolling baselines (e.g., active LEDs, average activity, error count) and emits a score + level (`normal`, `caution`, `divergent`). Replaceable with more sophisticated models later. |
+| 5. Distribution | `led_encoder_service`, `api_service`, `display_clients/*`, `epaper/` | `canonical_state.json`, `divergence.json`, `events.json`, `history.json` | Teensy LED frames (`{i,h,a,t}`), REST API responses (`/status`, `/config`, `/history`, `/health`, `/divergence`), iPhone dashboard, e-ink/e-paper scenes. |
+
+**Why this shape?**
+
+- Shared JSON artifacts keep the system debuggable. You can open any file under `data/` and immediately see what each service produced.  
+- Every step is intentionally idempotent: services reread their inputs each loop and rewrite outputs atomically, so crashes or reboots don’t corrupt downstream consumers.  
+- Heartbeats (`service_health.json`) mean the API and dashboards always know which agents are healthy.  
+- The design mirrors well-known home automations stacks (e.g., [Home Assistant + ESPHome](https://www.home-assistant.io/), [Pi-hole dashboards](https://github.com/pi-hole/AdminLTE)) where helpers define config, collectors gather telemetry, and renderers subscribe to a canonical feed.
+
+### Example Data Flow
+
+```mermaid
+graph TD
+    HA[Home Assistant helpers/events] -->|REST/WebSocket| ConfigSync
+    ConfigSync -->|writes| LEDConfig[led_config.json]
+    LEDConfig --> Collector
+    PiHole[Pi-hole API] --> Collector
+    Collector -->|raw metrics| RawState[raw_state.json]
+    Collector --> EventsLog[events.json]
+    RawState --> StateEngine
+    LEDConfig --> StateEngine
+    StateEngine --> Canonical[canonical_state.json]
+    StateEngine --> History[history.json]
+    History --> MLService
+    MLService --> Divergence[divergence.json]
+    Canonical --> Encoder
+    Canonical --> API
+    Divergence --> API
+    Canonical --> Displays[iPhone dashboard / e-ink / e-paper scenes]
+    Divergence --> Displays
+    EventsLog --> Displays
+```
+
+When something misbehaves, follow the files left-to-right: is `led_config.json` wrong? Is `raw_state.json` missing entries? Did `canonical_state.json` stop updating? Each service README documents the contract so you can drill down quickly.
+
 ## Quick Start (Developer)
 
 ```bash
