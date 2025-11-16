@@ -10,6 +10,10 @@ Reads `canonical_state.json` and streams compact LED frames to the Teensy microc
 - Avoid redundant writes by caching the last serialized frame.
 - Provide a `--dry-run` mode for development (prints frames to stdout).
 
+**Testing & Calibration:**
+
+Before deploying, use `devtools/test_led_panel.py` to verify the Teensy connection and map LEDs to ports. See the main `README.md` for usage instructions.
+
 ## Prerequisites
 
 - Python 3.9+ and `pip install -r jetson/requirements.txt` (needs `pyserial`).

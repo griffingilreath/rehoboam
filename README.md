@@ -144,6 +144,9 @@ python jetson/api_service/main.py --config jetson/api_service/config.yaml --log-
 python -m http.server 8000   # serve dev dashboard
 # in another shell:
 curl http://localhost:8000/devtools/dashboard/  # open in browser/iPhone
+
+# Export HA helpers config for easy setup
+python devtools/cli.py export-ha-config --output helpers.yaml
 ```
 
 Keep configs + runtime JSON in `data/` while testing, but **never commit** them (they’re gitignored). Use the CLI helper (`python devtools/cli.py`) to inspect state over SSH.
@@ -229,7 +232,9 @@ You can now run the pipeline locally (`python jetson/.../main.py --once`) or ena
 | `docs/schemas/` | JSON Schemas for every shared artifact (`led_config`, `raw_state`, `canonical_state`, etc.). |
 | `samples/` | Minimal sample JSON payloads that match the schemas; used by CI tests. |
 | `docs/api/openapi.json` | Frozen FastAPI schema generated from the live service. |
+| `docs/home_assistant_helpers.example.yaml` | Complete Home Assistant helper configuration example for all 16 LEDs (R1-R8, S1-S8) with sensible defaults. Copy into your HA config. |
 | `devtools/dashboard/` | Local-only web UI for inspecting `status/divergence/events` during development. |
+| `devtools/test_led_panel.py` | LED panel test & calibration tool: verifies Teensy connection, lights each LED sequentially, maps LEDs to ports (R1-R8, S1-S8). |
 
 > **Naming note:** The `jetson/` directory contains the backend services, but they run on any Linux host (the Jetson Nano just happens to be the first target).
 
@@ -289,6 +294,28 @@ Sample units live in [`systemd/`](systemd/README.md). After creating `/etc/rehob
 
 The host-side encoder is ready; pair it with a Teensy sketch that parses frames `{i,h,a,t}` and drives the 16 Neopixels (see `SERVICES_AND_AGENTS.md` §7 for guidance).
 
+**LED Panel Testing & Calibration:**
+
+Before deploying, test the Teensy connection and verify LED-to-port mapping:
+
+```bash
+# Quick connection test (lights all LEDs for 3 seconds)
+python devtools/test_led_panel.py --quick
+
+# Full interactive test (lights each LED one at a time, asks you to identify ports)
+python devtools/test_led_panel.py --device auto
+
+# Or specify the device explicitly
+python devtools/test_led_panel.py --device /dev/ttyACM0
+```
+
+The interactive test will:
+- Light each LED sequentially (indices 0-15)
+- Prompt you to identify which physical port it corresponds to (R1-R8, S1-S8)
+- Save the mapping to `data/led_mapping.json` for reference
+
+This is also integrated into the setup wizard (`python devtools/setup_wizard.py`) as an optional step after configuring the serial device.
+
 ### Display Clients
 
 - **iPhone dashboard:** serve `display_clients/iphone_dashboard` (e.g., `python -m http.server 8080 --directory display_clients/iphone_dashboard`) and point Safari at it; override API base via `localStorage.setItem('rehoboam_api', 'http://jetson-rack.local:8000')` if needed.
@@ -307,6 +334,26 @@ python jetson/api_service/main.py --config jetson/api_service/config.yaml
 ```
 
 Then visit <http://localhost:8000/devtools/dashboard/> (works on desktop or iPhone). The page reads `/status`, `/divergence`, `/recommendations`, `/health`, and `data/events.json` to preview the LED grid, Pi-hole stats, context flags, and suggestions. Adjust API/data endpoints by editing `devtools/dashboard/config.js`.
+
+### CLI Tool
+
+The `devtools/cli.py` script provides a terminal interface for viewing system status and exporting configurations:
+
+```bash
+# View current system status (LED health, divergence, recent events)
+python devtools/cli.py
+
+# Export Home Assistant helpers configuration (ready to drop into HA)
+python devtools/cli.py export-ha-config --output helpers.yaml
+
+# Export with current values from data/led_config.json merged in
+python devtools/cli.py export-ha-config --output helpers.yaml --use-current-config
+
+# Export to stdout (pipe to file)
+python devtools/cli.py export-ha-config > helpers.yaml
+```
+
+The export command reads `docs/home_assistant_helpers.example.yaml` and outputs a complete, ready-to-use Home Assistant configuration file that you can copy directly into your HA setup.
 
 ### CLI Snapshot
 
@@ -350,7 +397,7 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): hardware/network overview, data flow, entity modeling.
 - [`docs/SERVICES_AND_AGENTS.md`](docs/SERVICES_AND_AGENTS.md): in-depth specs for every agent, firmware responsibilities, client layouts.
 - [`docs/ML_ROADMAP.md`](docs/ML_ROADMAP.md): phased plan for data enrichment, feature extraction, recommendations, and proactive control loops.
-- [`docs/home_assistant.md`](docs/home_assistant.md): helper definitions + Lovelace layout for configuring rack ports from HA.
+- [`docs/home_assistant.md`](docs/home_assistant.md): helper definitions + Lovelace layout for configuring rack ports from HA. See [`docs/home_assistant_helpers.example.yaml`](docs/home_assistant_helpers.example.yaml) for a complete, ready-to-use configuration example.
 - Service-specific READMEs under `jetson/*/`, `display_clients/*/`, and `epaper/` cover configuration, operations, and troubleshooting.
 
 ## Rack Hardware & Inspiration

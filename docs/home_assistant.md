@@ -4,7 +4,28 @@ This repo assumes Home Assistant (HA) is the human-friendly source of truth for 
 
 ## Helpers
 
-Define the following HA helpers (Settings → Devices & Services → Helpers):
+Define the following HA helpers (Settings → Devices & Services → Helpers).
+
+**Quick Start:** 
+
+1. **Export the configuration file** (recommended):
+   ```bash
+   # From the repo root, export ready-to-use HA helpers config
+   python devtools/cli.py export-ha-config --output helpers.yaml
+   
+   # Or with current values from data/led_config.json merged in
+   python devtools/cli.py export-ha-config --output helpers.yaml --use-current-config
+   ```
+
+2. **Copy the file** into your Home Assistant configuration:
+   - Add to `configuration.yaml`, or
+   - Create a separate `helpers.yaml` file and include it in your config
+
+3. **Restart Home Assistant** and configure values via the UI (Settings → Devices & Services → Helpers)
+
+Alternatively, you can manually copy the complete example configuration from [`docs/home_assistant_helpers.example.yaml`](home_assistant_helpers.example.yaml). This file contains all 16 LEDs (R1-R8, S1-S8) with sensible defaults.
+
+**Manual Setup:** If you prefer to create helpers manually, use this pattern:
 
 ```yaml
 # configuration.yaml (or helpers.yaml if you split config)
@@ -28,9 +49,14 @@ input_select:
       - pihole
       - switch
       - ap
+      - nas
+      - uplink
+      - router
       - other
   # ... repeat for each index
 ```
+
+See [`docs/home_assistant_helpers.example.yaml`](home_assistant_helpers.example.yaml) for the complete configuration with all 16 LEDs pre-configured.
 
 Helpful naming pattern: `R1` through `R8` for indices 0–7 (Rack top) and `S1` through `S8` for indices 8–15 (Shelf/bottom). Example mapping:
 

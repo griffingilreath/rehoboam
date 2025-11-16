@@ -1,7 +1,9 @@
 # Example configuration for led_encoder_service.
 data_dir: ./data
 canonical_state_filename: canonical_state.json
-serial_device: /dev/ttyACM0
+# Set to "auto" to let the service pick the first Teensy-like port (recommended),
+# or override with an explicit path like /dev/ttyACM0.
+serial_device: auto
 baud_rate: 115200
 frame_interval_seconds: 0.2
 health_code_map:

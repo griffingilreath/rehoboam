@@ -14,6 +14,7 @@ It will:
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 import yaml
@@ -111,10 +112,15 @@ def main() -> None:
         ensure_service_config(REPO_ROOT / "jetson" / name)
 
     # Optional: API + dashboard tuning
-    print("\nAPI / dashboard settings:")
+    print(
+        "\nAPI / dashboard settings:\n"
+        "- API port: where FastAPI listens on the Jetson (8000 is the default used in docs/systemd).\n"
+        "- Dashboard origin: the URL you load the dashboard from (only needed if it is on a different\n"
+        "  host/port than the API, to allow CORS). If you are unsure, just press Enter to keep defaults."
+    )
     api_port = prompt("API port for jetson/api_service (Press Enter to keep 8000)", default="8000")
     dashboard_origin = prompt(
-        "Dashboard origin URL for CORS (e.g., http://iphone-rack.local, leave blank to skip)",
+        "Dashboard origin URL for CORS (e.g., http://iphone-rack.local, leave blank if unsure)",
         default="",
     )
     api_cfg = REPO_ROOT / "jetson" / "api_service" / "config.yaml"
@@ -140,8 +146,13 @@ def main() -> None:
     update_yaml(api_cfg, _update_api)
 
     # Optional: LED encoder serial device
-    print("\nLED encoder settings:")
-    serial_dev = prompt("Serial device for Teensy (Press Enter to keep /dev/ttyACM0)", "/dev/ttyACM0")
+    print(
+        "\nLED encoder settings:\n"
+        "- The service can auto-detect the Teensy serial port when 'serial_device' is set to 'auto'.\n"
+        "- If you prefer to pin a specific device (e.g., /dev/ttyACM0), enter it below; otherwise\n"
+        "  just press Enter to keep auto."
+    )
+    serial_dev = prompt("Serial device for Teensy (Press Enter to keep auto)", "auto")
     led_cfg = REPO_ROOT / "jetson" / "led_encoder_service" / "config.yaml"
 
     def _update_led(cfg: dict) -> bool:
@@ -152,6 +163,21 @@ def main() -> None:
         return changed_local
 
     update_yaml(led_cfg, _update_led)
+
+    # Optional: LED panel test
+    if confirm("Would you like to test the LED panel now? (lights each LED one at a time)", default=False):
+        print("\nStarting LED panel test...")
+        print("This will help you verify the connection and map LEDs to ports.")
+        import subprocess
+        test_script = REPO_ROOT / "devtools" / "test_led_panel.py"
+        if test_script.exists():
+            try:
+                subprocess.run([sys.executable, str(test_script), "--device", serial_dev], check=False)
+            except KeyboardInterrupt:
+                print("\nTest cancelled.")
+        else:
+            print(f"Warning: {test_script} not found. Run it manually with:")
+            print(f"  python devtools/test_led_panel.py --device {serial_dev}")
 
     # Optional: e-paper backend quick choice
     epaper_cfg = REPO_ROOT / "epaper" / "config.yaml"

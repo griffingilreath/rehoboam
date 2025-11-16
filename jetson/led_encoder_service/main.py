@@ -9,6 +9,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+import glob
 from typing import Any, Dict, Optional
 
 import serial
@@ -138,15 +139,39 @@ class LedEncoderService:
             return
         self._close_serial()
         try:
+            device: Optional[str] = self._config.serial_device
+            if device == "auto":
+                device = self._auto_detect_serial_device()
+            if device is None:
+                logging.error("No serial device detected for Teensy (auto mode); skipping open")
+                return
             self._serial = serial.Serial(
-                self._config.serial_device,
+                device,
                 self._config.baud_rate,
                 timeout=1,
             )
-            logging.info("Opened serial device %s @ %d", self._config.serial_device, self._config.baud_rate)
+            logging.info("Opened serial device %s @ %d", device, self._config.baud_rate)
         except serial.SerialException as exc:
             logging.error("Unable to open serial device %s: %s", self._config.serial_device, exc)
             self._serial = None
+
+    @staticmethod
+    def _auto_detect_serial_device() -> Optional[str]:
+        """Best-effort detection of a Teensy serial device."""
+        # Prefer /dev/serial/by-id entries mentioning Teensy
+        by_id = glob.glob("/dev/serial/by-id/*Teensy*") + glob.glob("/dev/serial/by-id/*teensy*")
+        if by_id:
+            try:
+                real = Path(by_id[0]).resolve()
+                return str(real)
+            except OSError:
+                return by_id[0]
+        # Fallback to first ttyACM* or ttyUSB*
+        for pattern in ("/dev/ttyACM*", "/dev/ttyUSB*"):
+            matches = sorted(glob.glob(pattern))
+            if matches:
+                return matches[0]
+        return None
 
     def _close_serial(self) -> None:
         if self._dry_run:

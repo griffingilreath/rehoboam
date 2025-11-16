@@ -10,6 +10,8 @@ Synchronizes LED metadata from Home Assistant helper entities into the Jetson's 
 - Long-lived access token with permission to read the helper entities (Profile → Long-Lived Access Tokens).
 - Helper entities created (e.g. `input_text.led0_name`, `input_text.led0_ip`, etc.) and exposed on a dashboard for easy editing.
 
+**Quick Setup:** See [`docs/home_assistant_helpers.example.yaml`](../../docs/home_assistant_helpers.example.yaml) for a complete example configuration with all 16 LEDs pre-configured. Copy it into your Home Assistant configuration and customize as needed.
+
 ## Configuration
 
 1. Copy the sample config:
