@@ -7,11 +7,7 @@ import signal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, TypeVar
-
-try:  # Optional: load central secrets from .env files if present
-    from dotenv import load_dotenv  # type: ignore
-except Exception:  # pragma: no cover
-    load_dotenv = None  # type: ignore
+import os
 
 class ServiceProtocol(Protocol):
     """Simple protocol implemented by all long-running services."""
@@ -88,14 +84,15 @@ def run_service(
     args = parser.parse_args()
 
     # Load env secrets early so ${VAR} placeholders in YAML can be expanded by services.
-    if load_dotenv:
-        # Prefer /etc/rehoboam/secrets.env then a local .env if present
-        system_env = Path("/etc/rehoboam/secrets.env")
-        local_env = Path(".env")
-        if system_env.exists():
-            load_dotenv(system_env)  # type: ignore
-        if local_env.exists():
-            load_dotenv(local_env)  # type: ignore
+    # Prefer /etc/rehoboam/secrets.env then a local .env if present.
+    for env_file in (Path("/etc/rehoboam/secrets.env"), Path(".env")):
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or "=" not in stripped:
+                    continue
+                key, value = stripped.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip())
 
     overrides = RunnerOverrides(
         data_dir=Path(args.data_dir).expanduser().resolve() if args.data_dir else None,
