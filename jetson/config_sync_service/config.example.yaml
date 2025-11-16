@@ -5,8 +5,8 @@ poll_interval_seconds: 30
 led_count: 16
 
 home_assistant:
-  base_url: http://homeassistant.local:8123
-  token: "REPLACE_WITH_LONG_LIVED_TOKEN"
+  base_url: ${HA_BASE_URL}
+  token: ${HA_TOKEN}
   timeout_seconds: 10
   verify_ssl: true
 

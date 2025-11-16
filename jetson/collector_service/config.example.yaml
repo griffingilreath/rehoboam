@@ -13,8 +13,8 @@ context_entities:
   - binary_sensor.rain_expected
 
 home_assistant:
-  base_url: http://homeassistant.local:8123
-  token: "REPLACE_WITH_LONG_LIVED_TOKEN"
+  base_url: ${HA_BASE_URL}
+  token: ${HA_TOKEN}
   timeout_seconds: 10
   verify_ssl: true
   availability_states:
@@ -23,9 +23,10 @@ home_assistant:
 
 pihole:
   enabled: true
-  base_url: http://pihole.local
+  base_url: ${PIHOLE_BASE_URL}
+  # For Pi-hole v5 (legacy), keep /admin/api.php. For v6, try /api/summary or override here.
   api_path: /admin/api.php
-  token: "REPLACE_WITH_PIHOLE_TOKEN"
+  token: ${PIHOLE_TOKEN}
   timeout_seconds: 5
 
 ping:

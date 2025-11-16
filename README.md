@@ -97,6 +97,7 @@ The key idea: all displays, dashboards, and scripts read the same JSON files, so
 - **Bidirectional HA view:** optional `rest` sensors can read `/status` and `/divergence` so the Rack Config page also shows live health right next to the helper controls.
 - **Port presets:** add HA scripts/automations (examples in the doc) to apply a set of helper values for common scenarios (e.g., turning `R5` into “Airport Express” vs “Mac mini”), keeping the physical panel, dashboards, and documentation in sync.
 
+Pi-hole API note: the `collector_service` auto-tries both legacy v5 (`/admin/api.php?summaryRaw=1`) and v6-style endpoints (`/api/summary`, `/api?summary=1`). You can override `pihole.api_path` in `jetson/collector_service/config.yaml` if your deployment uses a custom path or reverse proxy.
 ### Predictive ML on the Jetson
 
 The Jetson Nano runs `ml_service`, which watches the same history files the LEDs do and adds a “brain” layer:
@@ -153,6 +154,16 @@ Keep configs + runtime JSON in `data/` while testing, but **never commit** them 
 sudo mkdir -p /etc/rehoboam && sudo chown jetson:jetson /etc/rehoboam
 cp jetson/*/config.example.yaml /etc/rehoboam/<service>.yaml   # edit with real tokens/IPs
 
+# optional: centralize secrets (read automatically if present)
+sudo tee /etc/rehoboam/secrets.env <<'ENV'
+# Home Assistant
+HA_BASE_URL=http://homeassistant.local:8123
+HA_TOKEN=REPLACE_ME
+# Pi-hole
+PIHOLE_BASE_URL=http://pihole.local
+PIHOLE_TOKEN=REPLACE_ME
+ENV
+
 # create env file for systemd units
 sudo tee /etc/rehoboam.env <<'ENV'
 REHOBOAM_HOME=/opt/rehoboam
@@ -182,13 +193,12 @@ git clone https://github.com/griffingilreath/rehoboam.git
 cd rehoboam
 python -m venv .venv && source .venv/bin/activate
 
-# install deps
+# install deps (core + dev helpers)
 pip install -r jetson/requirements.txt
+pip install -r requirements-dev.txt
 
-# copy sample configs
-for svc in config_sync_service collector_service state_engine_service led_encoder_service api_service ml_service; do
-  cp jetson/$svc/config.example.yaml jetson/$svc/config.yaml
-done
+# interactive setup (HA base URL, tokens, Pi-hole, configs)
+python devtools/setup_wizard.py
 
 # seed data dir for local testing
 mkdir -p data && cp samples/led_config.sample.json data/led_config.json  # optional

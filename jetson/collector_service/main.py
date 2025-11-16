@@ -24,6 +24,7 @@ import yaml
 from jetson.common.json_store import atomic_write_json, load_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
+from jetson.common.config import expand_env_placeholders
 
 DEFAULT_CONFIG_PATH = "jetson/collector_service/config.yaml"
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
@@ -257,17 +258,32 @@ class PiHoleClient:
     def summary(self) -> Optional[Dict[str, Any]]:
         if not self._enabled:
             return None
-        url = f"{self._base_url}{self._api_path}"
-        params: Dict[str, Any] = {"summaryRaw": 1}
-        if self._token:
-            params["auth"] = self._token
-        try:
-            response = self._session.get(url, params=params, timeout=self._timeout)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as exc:  # pragma: no cover - network failure path
-            logging.warning("Pi-hole request failed: %s", exc)
-            return None
+        # Try legacy v5 endpoint first, then Pi-hole v6 variants.
+        attempts: list[tuple[str, Dict[str, Any]]] = []
+        # v5: /admin/api.php?summaryRaw=1&auth=<token>
+        attempts.append((f"{self._base_url}{self._api_path}", {"summaryRaw": 1}))
+        # v6: common candidates observed in docs/community
+        attempts.append((f"{self._base_url}/api/summary", {}))
+        attempts.append((f"{self._base_url}/api", {"summary": 1}))
+
+        for url, params in attempts:
+            params = dict(params)  # copy
+            if self._token:
+                # Most deployments accept "auth" query; users can also override api_path in config if needed.
+                params.setdefault("auth", self._token)
+            try:
+                response = self._session.get(url, params=params, timeout=self._timeout)
+                if response.status_code == 404:
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                # Minimal sanity check to avoid returning HTML/error pages
+                if isinstance(data, dict):
+                    return data
+            except requests.RequestException:
+                continue
+        logging.warning("Pi-hole request failed for all known endpoints (checked v5 and v6 paths)")
+        return None
 
 
 class Pinger:
@@ -562,6 +578,7 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
         print(f"Configuration file not found: {path}", file=sys.stderr)
         sys.exit(1)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data = expand_env_placeholders(data)
     overrides = overrides or RunnerOverrides()
     home_cfg = HomeAssistantConfig(**data.get("home_assistant", {}))
     pihole_cfg = PiHoleConfig(**data.get("pihole", {}))

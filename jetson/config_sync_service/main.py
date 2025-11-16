@@ -18,6 +18,7 @@ import yaml
 from jetson.common.json_store import atomic_write_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
+from jetson.common.config import expand_env_placeholders
 
 
 DEFAULT_CONFIG_PATH = "jetson/config_sync_service/config.yaml"
@@ -214,6 +215,7 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
 
     with path.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
+        data = expand_env_placeholders(data)
     overrides = overrides or RunnerOverrides()
 
     try:
