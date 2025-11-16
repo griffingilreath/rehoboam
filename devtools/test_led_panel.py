@@ -130,7 +130,35 @@ def run_test_sequence(device: str, baud: int = 115200) -> dict[int, str]:
         time.sleep(2)  # Give Teensy time to initialize
         print("Connected!")
     except serial.SerialException as e:
-        print(f"ERROR: Could not open serial port: {e}")
+        error_msg = str(e)
+        print(f"ERROR: Could not open serial port: {error_msg}")
+        
+        # Provide helpful suggestions for common errors
+        if "Permission denied" in error_msg or "[Errno 13]" in error_msg:
+            print("\n💡 Permission denied - try one of these solutions:")
+            print("   1. Add your user to the 'dialout' group (Linux):")
+            print("      sudo usermod -a -G dialout $USER")
+            print("      (then log out and back in, or reboot)")
+            print("   2. Use sudo (not recommended for production):")
+            print(f"      sudo python devtools/test_led_panel.py --device {port}")
+            print("   3. Check device permissions:")
+            print(f"      ls -l {port}")
+            print("   4. Verify the device exists and is the correct port:")
+            print("      ls -l /dev/ttyACM* /dev/ttyUSB*")
+        elif "No such file or directory" in error_msg or "[Errno 2]" in error_msg:
+            print("\n💡 Device not found - try:")
+            print("   1. Check if the Teensy is connected:")
+            print("      ls -l /dev/ttyACM* /dev/ttyUSB*")
+            print("   2. Try auto-detection:")
+            print("      python devtools/test_led_panel.py --device auto")
+            print("   3. Verify the device path is correct")
+        else:
+            print("\n💡 Troubleshooting tips:")
+            print("   1. Verify the Teensy is connected and powered")
+            print("   2. Check if another program is using the port")
+            print("   3. Try unplugging and replugging the USB cable")
+            print("   4. Use auto-detection: --device auto")
+        
         sys.exit(1)
     
     mapping: dict[int, str] = {}
@@ -235,7 +263,12 @@ def main() -> None:
             ser.close()
             print("Test complete!")
         except serial.SerialException as e:
-            print(f"ERROR: {e}")
+            error_msg = str(e)
+            print(f"ERROR: {error_msg}")
+            if "Permission denied" in error_msg or "[Errno 13]" in error_msg:
+                print("\n💡 Permission denied - add your user to the 'dialout' group:")
+                print("   sudo usermod -a -G dialout $USER")
+                print("   (then log out and back in)")
             sys.exit(1)
         return
     

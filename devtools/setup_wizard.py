@@ -150,7 +150,9 @@ def main() -> None:
         "\nLED encoder settings:\n"
         "- The service can auto-detect the Teensy serial port when 'serial_device' is set to 'auto'.\n"
         "- If you prefer to pin a specific device (e.g., /dev/ttyACM0), enter it below; otherwise\n"
-        "  just press Enter to keep auto."
+        "  just press Enter to keep auto.\n"
+        "- Note: On Linux, you may need to add your user to the 'dialout' group for serial access:\n"
+        "  sudo usermod -a -G dialout $USER (then log out/in or reboot)"
     )
     serial_dev = prompt("Serial device for Teensy (Press Enter to keep auto)", "auto")
     led_cfg = REPO_ROOT / "jetson" / "led_encoder_service" / "config.yaml"
@@ -168,13 +170,37 @@ def main() -> None:
     if confirm("Would you like to test the LED panel now? (lights each LED one at a time)", default=False):
         print("\nStarting LED panel test...")
         print("This will help you verify the connection and map LEDs to ports.")
+        print("Note: If you get permission errors, you may need to add your user to the 'dialout' group.")
+        print("      Run: sudo usermod -a -G dialout $USER (then log out/in)")
+        print("\nThe test will:")
+        print("  - Light each LED sequentially (0-15)")
+        print("  - Ask you to identify which physical port it corresponds to (R1-R8, S1-S8)")
+        print("  - Save the mapping to data/led_mapping.json")
+        print("\nNote: LED port names/descriptions are configured via Home Assistant helpers.")
+        print("      Use 'python devtools/cli.py export-ha-config' to generate the HA config.\n")
+        
         import subprocess
         test_script = REPO_ROOT / "devtools" / "test_led_panel.py"
         if test_script.exists():
             try:
-                subprocess.run([sys.executable, str(test_script), "--device", serial_dev], check=False)
+                result = subprocess.run(
+                    [sys.executable, str(test_script), "--device", serial_dev],
+                    check=False,
+                    capture_output=False,  # Let the test tool print its own errors
+                )
+                if result.returncode != 0:
+                    print("\n⚠️  LED panel test failed. This is okay - you can:")
+                    print("   1. Fix permissions and run the test later:")
+                    print(f"      python devtools/test_led_panel.py --device {serial_dev}")
+                    print("   2. Skip the test for now and configure LEDs via Home Assistant helpers")
+                    print("   3. The LED encoder service will work once permissions are fixed")
             except KeyboardInterrupt:
-                print("\nTest cancelled.")
+                print("\n✓ Test cancelled - you can run it later with:")
+                print(f"  python devtools/test_led_panel.py --device {serial_dev}")
+            except Exception as exc:
+                print(f"\n⚠️  Could not run LED panel test: {exc}")
+                print("   You can run it manually later with:")
+                print(f"   python devtools/test_led_panel.py --device {serial_dev}")
         else:
             print(f"Warning: {test_script} not found. Run it manually with:")
             print(f"  python devtools/test_led_panel.py --device {serial_dev}")

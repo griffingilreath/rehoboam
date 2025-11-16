@@ -314,7 +314,15 @@ The interactive test will:
 - Prompt you to identify which physical port it corresponds to (R1-R8, S1-S8)
 - Save the mapping to `data/led_mapping.json` for reference
 
-This is also integrated into the setup wizard (`python devtools/setup_wizard.py`) as an optional step after configuring the serial device.
+**Permission Issues (Linux):**
+
+If you get `Permission denied` errors, add your user to the `dialout` group:
+```bash
+sudo usermod -a -G dialout $USER
+# Then log out and back in (or reboot)
+```
+
+This is also integrated into the setup wizard (`python devtools/setup_wizard.py`) as an optional step after configuring the serial device. The wizard will gracefully handle permission errors and provide helpful instructions.
 
 ### Display Clients
 
