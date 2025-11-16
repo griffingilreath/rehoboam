@@ -153,10 +153,10 @@ def export_ha_helpers(output_path: Path | None = None, use_current_config: bool 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(content, encoding="utf-8")
             print(f"✓ Exported Home Assistant helpers configuration to: {output_path}")
-            print(f"\nNext steps:")
-            print(f"  1. Copy this file into your Home Assistant configuration")
-            print(f"  2. Restart Home Assistant")
-            print(f"  3. Configure values via Settings → Devices & Services → Helpers")
+            print("\nNext steps:")
+            print("  1. Copy this file into your Home Assistant configuration")
+            print("  2. Restart Home Assistant")
+            print("  3. Configure values via Settings → Devices & Services → Helpers")
             return 0
         except Exception as exc:
             print(f"ERROR: Failed to write {output_path}: {exc}", file=sys.stderr)
