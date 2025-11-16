@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Rehoboam LED Configuration",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "leds"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "leds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index", "name", "type"],
+        "additionalProperties": true,
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "ha_availability_entity": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

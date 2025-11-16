@@ -32,7 +32,7 @@ We plan to extend the ML service in stages:
    - Simple association rules: “If rain forecast + blinds closed daily, but today blinds stayed open → flag.”
    - Time-of-day preference learning: e.g., recommended heat setpoint detected from past behavior.
    - Anomaly models beyond z-scores (Isolation Forest, One-Class SVM, or TF Lite models) for “this cluster of signals is off.”
-3. **Recommendations:** write `data/recommendations.json` with entries like:
+3. **Recommendations:** append an array to `data/divergence.json` with entries like:
    ```json
    [
      {
@@ -44,10 +44,29 @@ We plan to extend the ML service in stages:
      }
    ]
    ```
-   Expose via API (`/recommendations`) so dashboards and HA can act.
+   Expose via API (`/recommendations`) so dashboards and HA can act without parsing the full divergence payload.
 4. **Automation hooks:**
    - Publish divergence + recommendations via MQTT or HA REST sensors so automations can respond (“if suggestion == blinds_close, run script.close_blinds unless user overrides”).
    - Provide a feedback loop (mark suggestions as applied/ignored) so the model learns preferences.
+
+### Data enrichment (Phase 1)
+
+- `collector_service` already records `context_entities`; configure these so history entries include `rain_expected`, `occupancy`, `daypart`, and `power_state`.  
+- Extend `history.json` to embed recent HA `event_tags` (e.g., “blind_auto_close”, “breaker_flip”) so the ML service can correlate state changes with user automations.  
+- Track trailing deltas (rate of change of Pi-hole QPS, number of ERROR LEDs over 15 minutes) for richer features.
+
+### Feature & model upgrades (Phase 2+)
+
+- **Feature store:** Build a derived matrix (`features.json`) that keeps normalized values (0–1) plus categorical embeddings (device type, location).  
+- **Model options:** Start with Isolation Forest (`scikit-learn`) for unsupervised anomalies, then evaluate TF Lite sequence models if the Jetson idle resources allow.  
+- **Rule engine:** Keep a YAML/JSON ruleset for deterministic triggers (e.g., “if rain_expected and blinds open > 5 minutes → suggestion”). Feed the same structure into HA automations for transparency.
+
+### Recommendation delivery (Phase 3)
+
+- `data/divergence.json` remains the single artifact; the `recommendations` array is exposed via `/divergence` and `/recommendations`.  
+- The API response is intentionally simple so HA REST sensors can map each suggestion to an `input_boolean` or automation.  
+- Dashboards (web, CLI, e-ink) read the same array; once MQTT hooks are added, each recommendation will also publish to a topic like `rehoboam/recommendations/<id>`.  
+- Planned metadata: `expires_at`, `priority`, `requires_ack`, and optional `actions` describing how to apply the suggestion automatically.
 
 ## Optional Dependencies
 

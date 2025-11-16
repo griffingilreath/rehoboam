@@ -26,7 +26,7 @@ Shared artifacts live under `./data` (config, state, history, divergence, servic
 | 1. Configuration | `config_sync_service` | Home Assistant helper entities (`input_text.*`, `input_select.*`) | `data/led_config.json` | Cursor-friendly JSON describing each LED slot (name, IP, HA availability entity, event entities, type). |
 | 2. Telemetry & Events | `collector_service` | `led_config.json`, ICMP ping, Pi-hole HTTP API, Home Assistant WebSocket/MQTT | `data/raw_state.json`, `data/events.json` | Each poll window records reachability, latency, HA availability, Pi-hole stats, plus a normalized stream of Home Assistant events for downstream visualizations. |
 | 3. Canonical State | `state_engine_service` | `led_config.json`, `raw_state.json` | `data/canonical_state.json`, `data/history.json` | Health rules (`OK/WARNING/ERROR/OFFLINE`) and activity levels (`0.0–1.0`) are computed per LED. Each snapshot carries contextual info (daypart, weather/occupancy flags) pulled from HA and is appended to history for ML, displays, and dashboards. |
-| 4. Divergence / Analytics | `ml_service` | `history.json` | `data/divergence.json`, `data/recommendations.json` | A simple z-score model compares the latest activity against rolling baselines and emits a score + level (`normal`, `caution`, `divergent`). The service also surfaces early “recommendations” (e.g., close blinds before rain) as a bridge to future predictive models. |
+| 4. Divergence / Analytics | `ml_service` | `history.json` | `data/divergence.json` (contains `recommendations` array) | A simple z-score model compares the latest activity against rolling baselines and emits a score + level (`normal`, `caution`, `divergent`). The same artifact carries early “recommendations” (e.g., close blinds before rain) as a bridge to future predictive models. |
 | 5. Distribution | `led_encoder_service`, `api_service`, `display_clients/*`, `epaper/` | `canonical_state.json`, `divergence.json`, `events.json`, `history.json` | Teensy LED frames (`{i,h,a,t}`), REST API responses (`/status`, `/config`, `/history`, `/health`, `/divergence`), iPhone dashboard, e-ink/e-paper scenes. |
 
 **Why this shape?**
@@ -89,11 +89,19 @@ To debug, inspect artifacts in this order: `led_config.json` → `raw_state.json
 
 The key idea: all displays, dashboards, and scripts read the same JSON files, so anyone can understand or debug what’s happening without digging into the code.
 
+## LED Panel & Home Assistant Page
+
+- **Physical layout:** the 16 LEDs are split into two banks to mirror the rack. `R1–R8` (indices `0–7`) cover the rack’s front row (Ethernet in, Jetson/Teensy controller, Pi-hole, NAS, Mac mini, Wi-Fi, uplink). `S1–S8` (indices `8–15`) cover the smart-home shelf (Hue, Lutron, Ikea, Aqara, Starling, Home Assistant core, Eufy, switch uplink). The Teensy firmware simply reads the `index` it receives (`{i,h,a,t}` frames), so you can reshuffle the hardware by editing helper values with zero firmware changes.
+- **HA helpers:** every slot has five helpers (`name`, `ip`, `type`, `ha_availability_entity`, `event_entities`). The “Rack Config” Lovelace page (grid view) keeps them organized so you can tap-to-edit from a phone. Sample YAML for helpers, grid layout, and validation automations lives in [`docs/home_assistant.md`](docs/home_assistant.md).
+- **Quick tweaks:** change a helper, wait for `config_sync_service` (polls every 30s) to regenerate `led_config.json`, and the collector/state engine/LED encoder will all pivot to the new device automatically.
+- **Bidirectional HA view:** optional `rest` sensors can read `/status` and `/divergence` so the Rack Config page also shows live health right next to the helper controls.
+- **Port presets:** add HA scripts/automations (examples in the doc) to apply a set of helper values for common scenarios (e.g., turning `R5` into “Airport Express” vs “Mac mini”), keeping the physical panel, dashboards, and documentation in sync.
+
 ### Predictive ML on the Jetson
 
 The Jetson Nano runs `ml_service`, which watches the same history files the LEDs do and adds a “brain” layer:
 
-- **Baseline vs live state:** Every canonical snapshot (with context like daypart, weather, occupancy) is appended to `history.json`. The ML service compares the latest metrics to rolling baselines and emits a divergence score (`divergence.json`) plus early recommendations (`recommendations.json`).  
+- **Baseline vs live state:** Every canonical snapshot (with context like daypart, weather, occupancy) is appended to `history.json`. The ML service compares the latest metrics to rolling baselines and emits a divergence score (`divergence.json`) plus an embedded `recommendations` array.  
 - **Proactive hooks:** If repeated errors occur on the same port, the service can suggest “check power/circuit.” If rain is expected but blinds didn’t close, it can suggest closing them. These hooks feed `/divergence` and `/recommendations` so dashboards, e-paper scenes, or Home Assistant automations can alert or act.
 - **Future automation:** The HA site can subscribe (REST/MQTT) and decide whether to act automatically (e.g., run a script to close blinds) or simply surface the suggestion. Because snapshots carry context, the model can learn preferences over time (morning heat setpoints, network health patterns, etc.).
 
@@ -103,11 +111,25 @@ This ML layer is intentionally lightweight today (z-scores + rule hooks) but str
 
 When editing services (or letting Cursor refactor code), keep these data contracts intact:
 
+- **Schema versioning**: Every JSON artifact written to `data/` includes a `schema_version` string (`"1.0"` today). Bump the version and update the schema docs/tests whenever you make a breaking change.
 - **`data/led_config.json`**: array of `{index, name, ip?, type, ha_availability_entity?, event_entities?}`. Produced only by `config_sync_service` from HA helpers.
 - **`data/canonical_state.json`**: `{timestamp, generated_at, leds: [{index, name, health, activity_level, activity_type, type}], context}`. Anything consuming LED state should treat this as the source of truth.
 - **`data/history.json`**: append-only list of canonical snapshots. ML relies on the full record, so never truncate fields when writing.
 - **`led_encoder_service` frames**: `{i, h, a, t}` = `{index, health_code, activity_level, activity_type}`. The Teensy firmware expects `0<=i<=15`, `h` in `[0..4]`, `a` float 0-1, `t` integer code.
+- **`jetson/common/led_codes.py`**: authoritative IntEnum definitions for both health and activity codes; use these when adding new frame types so the serial contract stays aligned.
 - **`service_health.json`**: each service updates/rewrites its own entry; avoid splitting the file per service or consumers won’t see unified health.
+
+## JSON Schemas & Samples
+
+- Machine-readable schemas live under `docs/schemas/` (draft-07). They cover `led_config`, `raw_state`, `canonical_state`, `history`, `divergence`, and `service_health`.
+- Matching JSON samples live in `samples/` and double as fixtures for `tests/test_json_schemas.py`, which validates every artifact with `jsonschema`.
+- When you evolve a format, update the schema + sample first, bump `schema_version`, then adjust the producing service. The new unit test will remind you if a sample drifts from its schema.
+
+## API Reference
+
+- `docs/api/openapi.json` is generated from the FastAPI app (see the inline Python snippet in this repo’s history/log) and captures `/status`, `/config`, `/history`, `/divergence`, `/recommendations`, `/health`, and `/info`.
+- The file is stable enough for client generation (e.g., `npx openapi-typescript docs/api/openapi.json` or `datamodel-code-generator`). Regenerate whenever you add endpoints or response fields by running the helper snippet after updating `jetson/api_service/main.py`.
+- Display clients (`display_clients/README.md`) and the e-ink renderer both consume the documented endpoints; update the OpenAPI snapshot as part of any API change review.
 
 ## Working Locally vs On the Rack
 
@@ -150,6 +172,8 @@ sudo systemctl enable --now rehoboam-config-sync.service rehoboam-collector.serv
 
 Secrets (Home Assistant and Pi-hole tokens) live only in `/etc/rehoboam/*.yaml`; never commit real config files.
 
+> `rehoboam-epaper.service` calls `python -m epaper.service.main ... --shutdown` in `ExecStop` so the IT8951 panel always receives a clean refresh + sleep before power loss. If you create custom units, keep that shutdown step or you risk permanent ghosting on the glass.
+
 ## Quick Start (Developer)
 
 ```bash
@@ -167,7 +191,7 @@ for svc in config_sync_service collector_service state_engine_service led_encode
 done
 
 # seed data dir for local testing
-mkdir -p data && cp samples/led_config.json data/led_config.json  # optional
+mkdir -p data && cp samples/led_config.sample.json data/led_config.json  # optional
 ```
 
 You can now run the pipeline locally (`python jetson/.../main.py --once`) or enable the provided systemd units once configs are filled out.
@@ -185,8 +209,16 @@ You can now run the pipeline locally (`python jetson/.../main.py --once`) or ena
 | `jetson/ml_service/README.md` | Details the current metrics and the roadmap for predictive suggestions (blinds-before-rain, morning setpoints, breaker recovery). |
 | `display_clients/iphone_dashboard/` | Static PWA dashboard for iPhone behind the two-way mirror. |
 | `display_clients/eink_client/` | Script that renders grayscale PNGs for e-ink panels. |
+| `display_clients/README.md` | Quickstart for the two dev-facing display clients. |
 | `epaper/` | Modular e-paper scene runner (CLI + config-driven service). |
-| `jetson/common/` | Shared utilities (currently heartbeat tracker). |
+| `jetson/common/` | Shared utilities (heartbeat tracker, enums, service runner, etc.). |
+| `firmware/teensy_led_panel/` | Teensy + PlatformIO firmware for the 16-LED Neopixel panel (and related host tooling). |
+| `third_party/` | Top-level guardrail for vendor code, now split into `third_party/it8951/` and `third_party/teensy_examples/`. |
+| `third_party/it8951/` | Holds the Waveshare + GregDMeyer IT8951 repos/submodules and build artifacts (e.g., `it8951usb`). |
+| `third_party/teensy_examples/` | Stock PJRC/FastLED reference sketches kept separate from the custom firmware. |
+| `docs/schemas/` | JSON Schemas for every shared artifact (`led_config`, `raw_state`, `canonical_state`, etc.). |
+| `samples/` | Minimal sample JSON payloads that match the schemas; used by CI tests. |
+| `docs/api/openapi.json` | Frozen FastAPI schema generated from the live service. |
 | `devtools/dashboard/` | Local-only web UI for inspecting `status/divergence/events` during development. |
 
 > **Naming note:** The `jetson/` directory contains the backend services, but they run on any Linux host (the Jetson Nano just happens to be the first target).
@@ -203,7 +235,7 @@ Install shared dependencies once:
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r jetson/requirements.txt
+pip install -r requirements-dev.txt  # includes ruff/mypy for CI parity
 ```
 
 Service-specific dependencies are documented in each directory (e.g., `display_clients/eink_client/requirements.txt`).
@@ -264,7 +296,7 @@ python -m http.server 8000
 python jetson/api_service/main.py --config jetson/api_service/config.yaml
 ```
 
-Then visit <http://localhost:8000/devtools/dashboard/> (works on desktop or iPhone). The page reads `/status`, `/divergence`, `/health`, and `data/events.json` to preview the LED grid, Pi-hole stats, context flags, and recommendations. Adjust API/data endpoints by editing `devtools/dashboard/config.js`.
+Then visit <http://localhost:8000/devtools/dashboard/> (works on desktop or iPhone). The page reads `/status`, `/divergence`, `/recommendations`, `/health`, and `data/events.json` to preview the LED grid, Pi-hole stats, context flags, and suggestions. Adjust API/data endpoints by editing `devtools/dashboard/config.js`.
 
 ### CLI Snapshot
 
@@ -278,12 +310,17 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
 
 ## Tests & CI
 
-- Unit tests live under `tests/` (currently covering the ML divergence model). Run them with:
+- Unit tests live under `tests/` (covering schemas + every service). Run them with:
   ```bash
   source .venv/bin/activate
   python -m unittest discover -s tests -v
   ```
-- GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) provisions a venv, installs `jetson/requirements.txt`, and executes the test suite on pushes/PRs. Add more suites (lint, integration) by dropping additional YAML files next to it.
+- Lint + type checks pair with the suite for local or CI parity:
+  ```bash
+  ruff check .
+  mypy --config-file pyproject.toml jetson
+  ```
+- GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) provisions a venv, installs `requirements-dev.txt`, runs `ruff`, `mypy`, and the full unittest suite on pushes/PRs.
 
 ## Observability & Logs
 
@@ -296,6 +333,7 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): hardware/network overview, data flow, entity modeling.
 - [`docs/SERVICES_AND_AGENTS.md`](docs/SERVICES_AND_AGENTS.md): in-depth specs for every agent, firmware responsibilities, client layouts.
+- [`docs/ML_ROADMAP.md`](docs/ML_ROADMAP.md): phased plan for data enrichment, feature extraction, recommendations, and proactive control loops.
 - [`docs/home_assistant.md`](docs/home_assistant.md): helper definitions + Lovelace layout for configuring rack ports from HA.
 - Service-specific READMEs under `jetson/*/`, `display_clients/*/`, and `epaper/` cover configuration, operations, and troubleshooting.
 

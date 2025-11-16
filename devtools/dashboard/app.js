@@ -88,14 +88,14 @@ function renderPihole(status) {
   piholeEl.innerHTML = entries.join('<br/>');
 }
 
-function renderDivergence(divergence) {
+function renderDivergence(divergence, recPayload) {
   if (!divergence) {
     divergenceEl.textContent = 'No divergence data.';
     recommendationsEl.textContent = '';
     return;
   }
   divergenceEl.innerHTML = `Score: ${divergence.score?.toFixed?.(2) || divergence.score || 0}<br/>Level: ${divergence.level}`;
-  const recs = divergence.recommendations || [];
+  const recs = recPayload?.recommendations || divergence.recommendations || [];
   if (!recs.length) {
     recommendationsEl.textContent = 'No recommendations.';
   } else {
@@ -134,16 +134,17 @@ function renderEvents(events) {
 
 async function refresh() {
   try {
-    const [status, divergence, health, eventsPayload] = await Promise.all([
+    const [status, divergence, recommendations, health, eventsPayload] = await Promise.all([
       fetchJson(`${API_BASE}/status`),
       fetchJson(`${API_BASE}/divergence`).catch(() => null),
+      fetchJson(`${API_BASE}/recommendations`).catch(() => null),
       fetchJson(`${API_BASE}/health`).catch(() => null),
       fetchJson(`${DATA_BASE}/events.json`).catch(() => ({ events: [] })),
     ]);
     renderLedGrid(status);
     renderContext(status?.context);
     renderPihole(status);
-    renderDivergence(divergence);
+    renderDivergence(divergence, recommendations);
     const events = eventsPayload?.events || [];
     renderEvents(events);
   } catch (err) {

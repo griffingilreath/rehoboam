@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import signal
 import sys
 import time
 from dataclasses import dataclass, field
@@ -16,6 +15,8 @@ import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+from jetson.common.service_runner import RunnerOverrides, run_service
 
 
 DEFAULT_CONFIG_PATH = "jetson/api_service/config.yaml"
@@ -145,16 +146,31 @@ def create_app(config: ServiceConfig) -> FastAPI:
             raise HTTPException(status_code=404, detail="Divergence data not available")
         return data
 
+    @app.get("/recommendations", summary="Actionable suggestions derived from ML service")
+    def get_recommendations() -> Dict[str, Any]:
+        data = cache.read(config.divergence_path, allow_empty=True)
+        if not data:
+            raise HTTPException(status_code=404, detail="Recommendations not available")
+        recommendations = data.get("recommendations") or []
+        return {
+            "generated_at": data.get("generated_at"),
+            "timestamp": data.get("timestamp"),
+            "recommendations": recommendations,
+        }
+
     return app
 
 
-def load_service_config(path: Path) -> ServiceConfig:
+def load_service_config(path: Path, overrides: RunnerOverrides | None = None) -> ServiceConfig:
     if not path.exists():
         print(f"Configuration file not found: {path}", file=sys.stderr)
         sys.exit(1)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    overrides = overrides or RunnerOverrides()
+    data_dir = overrides.data_dir or Path(data.get("data_dir", "./data")).expanduser().resolve()
+    log_level = overrides.log_level or (data.get("logging", {}) or {}).get("level", "INFO")
     return ServiceConfig(
-        data_dir=Path(data.get("data_dir", "./data")).expanduser().resolve(),
+        data_dir=data_dir,
         led_config_filename=data.get("led_config_filename", DEFAULT_LED_CONFIG_FILENAME),
         canonical_state_filename=data.get("canonical_state_filename", DEFAULT_CANONICAL_FILENAME),
         history_filename=data.get("history_filename", DEFAULT_HISTORY_FILENAME),
@@ -165,78 +181,60 @@ def load_service_config(path: Path) -> ServiceConfig:
         cors_origins=data.get("cors_origins", []),
         cache_ttl_seconds=float(data.get("cache_ttl_seconds", 0.5)),
         divergence_filename=data.get("divergence_filename", DEFAULT_DIVERGENCE_FILENAME),
-        log_level=(data.get("logging", {}) or {}).get("level", "INFO"),
+        log_level=log_level,
     )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Serve canonical LED data via HTTP")
-    parser.add_argument(
-        "--config",
-        default=DEFAULT_CONFIG_PATH,
-        help=f"Path to YAML config file (default: {DEFAULT_CONFIG_PATH})",
-    )
-    parser.add_argument(
-        "--host",
-        help="Override host binding",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        help="Override port",
-    )
-    parser.add_argument(
-        "--reload",
-        action="store_true",
-        help="Enable FastAPI autoreload (dev only)",
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
-        help="Override configured log level",
-    )
-    return parser.parse_args()
+class _ApiServerWrapper:
+    def __init__(self, config: ServiceConfig, host: str, port: int, reload_flag: bool, log_level: str) -> None:
+        self._config = config
+        self._host = host
+        self._port = port
+        self._server = uvicorn.Server(
+            uvicorn.Config(
+                create_app(config),
+                host=host,
+                port=port,
+                reload=reload_flag,
+                log_level=log_level.lower(),
+            )
+        )
 
+    def run(self, run_once: bool = False) -> None:
+        logging.info("Starting api_service on %s:%s", self._host, self._port)
+        self._server.run()
 
-def configure_logging(level_name: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level_name.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
+    def request_stop(self, *_: Any) -> None:
+        logging.info("Shutdown requested for api_service")
+        self._server.should_exit = True
 
 
 def main() -> None:
-    args = parse_args()
-    config_path = Path(args.config).expanduser().resolve()
-    service_config = load_service_config(config_path)
-    log_level = args.log_level or service_config.log_level
-    configure_logging(log_level)
+    def _add_extra_args(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--host", help="Override API host binding")
+        parser.add_argument("--port", type=int, help="Override API port binding")
+        parser.add_argument(
+            "--reload",
+            action="store_true",
+            help="Enable FastAPI autoreload (dev only)",
+        )
 
-    host = args.host or service_config.host
-    port = args.port or service_config.port
-    reload_flag = args.reload or service_config.reload
+    def _create_service(config: ServiceConfig, args: argparse.Namespace) -> _ApiServerWrapper:
+        host = args.host or config.host
+        port = args.port or config.port
+        reload_flag = args.reload or config.reload
+        return _ApiServerWrapper(config, host, port, reload_flag, config.log_level)
 
-    app = create_app(service_config)
-
-    logging.info("Starting api_service on %s:%s", host, port)
-
-    uvicorn_config = uvicorn.Config(
-        app,
-        host=host,
-        port=port,
-        reload=reload_flag,
-        log_level=log_level.lower(),
+    run_service(
+        service_name="api_service",
+        description="Serve canonical LED data via FastAPI",
+        default_config_path=DEFAULT_CONFIG_PATH,
+        load_config=load_service_config,
+        create_service=_create_service,
+        add_arguments=_add_extra_args,
+        supports_once=False,
+        supports_interval_override=False,
     )
-    server = uvicorn.Server(uvicorn_config)
-
-    def handle_signal(*_: Any) -> None:
-        logging.info("Shutdown signal received")
-        server.should_exit = True
-
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
-
-    server.run()
 
 
 if __name__ == "__main__":

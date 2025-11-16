@@ -1,0 +1,74 @@
+import json
+import unittest
+from pathlib import Path
+
+from jetson.collector_service.main import (
+    EventConfig,
+    CollectorService,
+    HomeAssistantConfig,
+    PiHoleConfig,
+    PingConfig,
+    ServiceConfig,
+)
+
+
+class FakeBuffer:
+    def snapshot(self):
+        return [{"entity_id": "binary_sensor.test", "timestamp": 0}]
+
+    def count_for_entities(self, entities):
+        return 1
+
+
+class FakeWriter:
+    def append_many(self, events):
+        self.events = events
+
+
+class CollectorServiceTest(unittest.TestCase):
+    def test_collect_once_writes_raw_state(self):
+        data_dir = Path(self._tmpdir())
+        led_config = {
+            "leds": [
+                {"index": 0, "name": "Device A", "event_entities": ["binary_sensor.test"]},
+            ]
+        }
+        (data_dir / "led_config.json").write_text(json.dumps(led_config), encoding="utf-8")
+
+        config = ServiceConfig(
+            data_dir=data_dir,
+            led_config_filename="led_config.json",
+            raw_state_filename="raw_state.json",
+            events_log_filename="events.json",
+            poll_interval_seconds=1.0,
+            event_buffer_seconds=5.0,
+            context_entities=[],
+            home_assistant=HomeAssistantConfig(base_url="http://ha.local", token="token"),
+            pihole=PiHoleConfig(),
+            ping=PingConfig(),
+            events=EventConfig(),
+        )
+        service = CollectorService(config)
+        service._event_buffer = FakeBuffer()  # type: ignore[attr-defined]
+        service._event_log_writer = FakeWriter()  # type: ignore[attr-defined]
+        service._load_led_config = lambda: led_config  # type: ignore[attr-defined]
+        service._collect_device_state = lambda led: {"reachable": True}  # type: ignore[attr-defined]
+        service._build_context_snapshot = lambda: {"flags": {"occupied": True}}  # type: ignore[attr-defined]
+
+        service.collect_once()
+
+        payload = json.loads((data_dir / "raw_state.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema_version"], "1.0")
+        self.assertTrue(payload["devices"]["Device A"]["reachable"])
+
+    def _tmpdir(self) -> str:
+        from tempfile import TemporaryDirectory
+
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return tmp.name
+
+
+if __name__ == "__main__":
+    unittest.main()
+

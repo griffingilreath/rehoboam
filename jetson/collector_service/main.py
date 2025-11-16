@@ -1,26 +1,3 @@
-class EventLogWriter:
-    """Persist recent detailed events for dashboards/e-paper scenes."""
-
-    def __init__(self, path: Path, max_entries: int = 200) -> None:
-        self._path = path
-        self._max_entries = max_entries
-        self._lock = threading.Lock()
-
-    def append_many(self, events: List[Dict[str, Any]]) -> None:
-        if not events:
-            return
-        with self._lock:
-            existing: List[Dict[str, Any]] = []
-            if self._path.exists():
-                try:
-                    existing = json.loads(self._path.read_text(encoding="utf-8")).get("events", [])
-                except Exception:
-                    logging.exception("Failed to read existing events log")
-            merged = (existing + events)[-self._max_entries :]
-            payload = {"events": merged}
-            tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            tmp.replace(self._path)
 #!/usr/bin/env python3
 """Collect raw telemetry for each LED-defined device."""
 from __future__ import annotations
@@ -29,7 +6,6 @@ import argparse
 import json
 import logging
 import platform
-import signal
 import subprocess
 import sys
 import threading
@@ -45,12 +21,32 @@ import requests
 import websocket
 import yaml
 
+from jetson.common.json_store import atomic_write_json, load_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
+from jetson.common.service_runner import RunnerOverrides, run_service
 
 DEFAULT_CONFIG_PATH = "jetson/collector_service/config.yaml"
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_EVENTS_LOG_FILENAME = "events.json"
+RAW_STATE_SCHEMA_VERSION = "1.0"
+class EventLogWriter:
+    """Persist recent detailed events for dashboards/e-paper scenes."""
+
+    def __init__(self, path: Path, max_entries: int = 200) -> None:
+        self._path = path
+        self._max_entries = max_entries
+        self._lock = threading.Lock()
+
+    def append_many(self, events: List[Dict[str, Any]]) -> None:
+        if not events:
+            return
+        with self._lock:
+            existing_payload = load_json(self._path, {"events": []})
+            existing = existing_payload.get("events", []) if isinstance(existing_payload, dict) else []
+            merged = (existing + events)[-self._max_entries :]
+            payload = {"events": merged}
+            atomic_write_json(self._path, payload)
 
 
 @dataclass
@@ -262,7 +258,7 @@ class PiHoleClient:
         if not self._enabled:
             return None
         url = f"{self._base_url}{self._api_path}"
-        params = {"summaryRaw": 1}
+        params: Dict[str, Any] = {"summaryRaw": 1}
         if self._token:
             params["auth"] = self._token
         try:
@@ -447,18 +443,15 @@ class CollectorService:
             devices[name] = self._collect_device_state(led)
         context_snapshot = self._build_context_snapshot()
         payload = {
+            "schema_version": RAW_STATE_SCHEMA_VERSION,
             "timestamp": int(time.time()),
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "devices": devices,
             "events": self._event_buffer.snapshot(),
             "context": context_snapshot,
         }
-        serialized = json.dumps(payload, indent=2, sort_keys=False)
         raw_state_path = self._config.raw_state_path
-        raw_state_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = raw_state_path.with_suffix(".tmp")
-        tmp.write_text(serialized, encoding="utf-8")
-        tmp.replace(raw_state_path)
+        atomic_write_json(raw_state_path, payload)
         logging.info("Wrote %s for %d devices", raw_state_path, len(devices))
         self._health.mark_running(self._identity)
         self._flush_event_log()
@@ -564,70 +557,50 @@ class CollectorService:
                 flags["rain_expected"] = True
 
 
-def load_service_config(path: Path) -> ServiceConfig:
+def load_service_config(path: Path, overrides: RunnerOverrides | None = None) -> ServiceConfig:
     if not path.exists():
         print(f"Configuration file not found: {path}", file=sys.stderr)
         sys.exit(1)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    overrides = overrides or RunnerOverrides()
     home_cfg = HomeAssistantConfig(**data.get("home_assistant", {}))
     pihole_cfg = PiHoleConfig(**data.get("pihole", {}))
     ping_cfg = PingConfig(**data.get("ping", {}))
     events_cfg = EventConfig(**data.get("events", {}))
+    data_dir = overrides.data_dir or Path(data.get("data_dir", "./data")).expanduser().resolve()
+    poll_interval = overrides.poll_interval_seconds or float(data.get("poll_interval_seconds", 3))
+    log_level = overrides.log_level or (data.get("logging", {}) or {}).get("level", "INFO")
     config = ServiceConfig(
-        data_dir=Path(data.get("data_dir", "./data")).expanduser().resolve(),
+        data_dir=data_dir,
         led_config_filename=data.get("led_config_filename", DEFAULT_LED_CONFIG_FILENAME),
         raw_state_filename=data.get("raw_state_filename", DEFAULT_RAW_STATE_FILENAME),
         events_log_filename=data.get("events_log_filename", DEFAULT_EVENTS_LOG_FILENAME),
-        poll_interval_seconds=float(data.get("poll_interval_seconds", 3)),
+        poll_interval_seconds=poll_interval,
         event_buffer_seconds=float(data.get("event_buffer_seconds", 10)),
         context_entities=data.get("context_entities", []) or [],
         home_assistant=home_cfg,
         pihole=pihole_cfg,
         ping=ping_cfg,
         events=events_cfg,
-        log_level=(data.get("logging", {}) or {}).get("level", "INFO"),
+        log_level=log_level,
     )
     return config
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Collect raw LED telemetry")
-    parser.add_argument(
-        "--config",
-        default=DEFAULT_CONFIG_PATH,
-        help=f"Path to YAML config file (default: {DEFAULT_CONFIG_PATH})",
-    )
-    parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Collect a single sample and exit",
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
-        help="Override configured log level",
-    )
-    return parser.parse_args()
-
-
-def configure_logging(level_name: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level_name.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
-
-
 def main() -> None:
-    args = parse_args()
-    config_path = Path(args.config).expanduser().resolve()
-    service_config = load_service_config(config_path)
-    log_level = args.log_level or service_config.log_level
-    configure_logging(log_level)
-    logging.info("Starting collector_service; writing to %s", service_config.raw_state_path)
-    service = CollectorService(service_config)
-    signal.signal(signal.SIGTERM, service.request_stop)
-    signal.signal(signal.SIGINT, service.request_stop)
-    service.run(run_once=args.once)
+    def _create_service(config: ServiceConfig, _: argparse.Namespace) -> CollectorService:
+        logging.info(
+            "Collector will write %s every %.1fs", config.raw_state_path, config.poll_interval_seconds
+        )
+        return CollectorService(config)
+
+    run_service(
+        service_name="collector_service",
+        description="Collect raw LED telemetry and context",
+        default_config_path=DEFAULT_CONFIG_PATH,
+        load_config=load_service_config,
+        create_service=_create_service,
+    )
 
 
 if __name__ == "__main__":

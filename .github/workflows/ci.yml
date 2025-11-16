@@ -18,7 +18,15 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          pip install -r jetson/requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run linters
+        run: |
+          source .venv/bin/activate
+          ruff check .
+      - name: Run type checks
+        run: |
+          source .venv/bin/activate
+          mypy --config-file pyproject.toml jetson
       - name: Run unit tests
         run: |
           source .venv/bin/activate

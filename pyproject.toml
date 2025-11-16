@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["jetson", "devtools", "tests"]
+extend-exclude = ["firmware", "third_party", "data"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+
+

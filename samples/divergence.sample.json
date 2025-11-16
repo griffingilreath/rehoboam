@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2025-01-01T00:05:00Z",
+  "timestamp": 1735699500,
+  "score": 0.4,
+  "level": "normal",
+  "metrics": {
+    "active_leds": {
+      "value": 2,
+      "mean": 2.5,
+      "stdev": 1.0,
+      "z": 0.5
+    }
+  },
+  "recommendations": [
+    {
+      "timestamp": 1735699500,
+      "trigger": "rain_expected",
+      "target": "Living Room Blinds",
+      "suggestion": "Close blinds",
+      "confidence": 0.72,
+      "status": "pending"
+    }
+  ]
+}

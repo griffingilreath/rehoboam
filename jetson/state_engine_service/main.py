@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import signal
 import sys
 import time
 from dataclasses import dataclass
@@ -15,7 +14,9 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from jetson.common.json_store import atomic_write_json, load_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
+from jetson.common.service_runner import RunnerOverrides, run_service
 
 
 DEFAULT_CONFIG_PATH = "jetson/state_engine_service/config.yaml"
@@ -23,6 +24,8 @@ DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
 DEFAULT_HISTORY_FILENAME = "history.json"
+CANONICAL_SCHEMA_VERSION = "1.0"
+HISTORY_SCHEMA_VERSION = "1.0"
 
 
 @dataclass
@@ -142,6 +145,7 @@ class StateEngineService:
                 "activity_type": activity_type,
             })
         payload = {
+            "schema_version": CANONICAL_SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "timestamp": int(now),
             "leds": canonical_leds,
@@ -222,106 +226,73 @@ class StateEngineService:
 
     def _write_canonical(self, payload: Dict[str, Any]) -> None:
         canonical_path = self._config.canonical_path
-        canonical_path.parent.mkdir(parents=True, exist_ok=True)
-        serialized = json.dumps(payload, indent=2, sort_keys=False)
-        tmp = canonical_path.with_suffix(".tmp")
-        tmp.write_text(serialized, encoding="utf-8")
-        tmp.replace(canonical_path)
+        atomic_write_json(canonical_path, payload)
         logging.info("Wrote %s with %d LEDs", canonical_path, len(payload.get("leds", [])))
 
     def _record_history(self, entry: Dict[str, Any]) -> None:
         if not self._config.history_enabled:
             return
         path = self._config.history_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        entries: List[Dict[str, Any]]
-        entries = []
-        if path.exists():
-            try:
-                existing = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(existing, dict):
-                    entries = list(existing.get("entries") or [])
-                elif isinstance(existing, list):
-                    entries = existing
-            except json.JSONDecodeError as exc:
-                logging.error("Invalid JSON in %s while recording history: %s", path, exc)
-                entries = []
+        existing = load_json(path, {"schema_version": HISTORY_SCHEMA_VERSION, "entries": []})
+        if isinstance(existing, dict):
+            entries: List[Dict[str, Any]] = list(existing.get("entries") or [])
+        elif isinstance(existing, list):
+            entries = list(existing)
+        else:
+            entries = []
+        if "schema_version" not in entry:
+            entry = {**entry, "schema_version": CANONICAL_SCHEMA_VERSION}
         entries.append(entry)
         if self._config.history_retention_seconds:
             cutoff = entry["timestamp"] - self._config.history_retention_seconds
             entries = [item for item in entries if item.get("timestamp", 0) >= cutoff]
         if self._config.history_max_entries:
             entries = entries[-self._config.history_max_entries:]
-        payload = {"entries": entries}
-        serialized = json.dumps(payload, indent=2, sort_keys=False)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(serialized, encoding="utf-8")
-        tmp.replace(path)
+        payload = {"schema_version": HISTORY_SCHEMA_VERSION, "entries": entries}
+        atomic_write_json(path, payload)
 
 
-def load_service_config(path: Path) -> ServiceConfig:
+def load_service_config(path: Path, overrides: RunnerOverrides | None = None) -> ServiceConfig:
     if not path.exists():
         print(f"Configuration file not found: {path}", file=sys.stderr)
         sys.exit(1)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    overrides = overrides or RunnerOverrides()
     health_rules = HealthRules(**(data.get("health_rules") or {}))
     activity_rules = ActivityRules(**(data.get("activity_rules") or {}))
     history_retention = data.get("history_retention_seconds", 86400)
+    data_dir = overrides.data_dir or Path(data.get("data_dir", "./data")).expanduser().resolve()
+    poll_interval = overrides.poll_interval_seconds or float(data.get("poll_interval_seconds", 2))
+    log_level = overrides.log_level or (data.get("logging", {}) or {}).get("level", "INFO")
     config = ServiceConfig(
-        data_dir=Path(data.get("data_dir", "./data")).expanduser().resolve(),
+        data_dir=data_dir,
         led_config_filename=data.get("led_config_filename", DEFAULT_LED_CONFIG_FILENAME),
         raw_state_filename=data.get("raw_state_filename", DEFAULT_RAW_STATE_FILENAME),
         canonical_state_filename=data.get("canonical_state_filename", DEFAULT_CANONICAL_FILENAME),
-        poll_interval_seconds=float(data.get("poll_interval_seconds", 2)),
+        poll_interval_seconds=poll_interval,
         health_rules=health_rules,
         activity_rules=activity_rules,
         history_enabled=bool(data.get("history_enabled", True)),
         history_filename=data.get("history_filename", DEFAULT_HISTORY_FILENAME),
         history_max_entries=int(data.get("history_max_entries", 1800)),
         history_retention_seconds=int(history_retention) if history_retention is not None else None,
-        log_level=(data.get("logging", {}) or {}).get("level", "INFO"),
+        log_level=log_level,
     )
     return config
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compute canonical LED state")
-    parser.add_argument(
-        "--config",
-        default=DEFAULT_CONFIG_PATH,
-        help=f"Path to YAML config file (default: {DEFAULT_CONFIG_PATH})",
-    )
-    parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Process a single cycle and exit",
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
-        help="Override configured log level",
-    )
-    return parser.parse_args()
-
-
-def configure_logging(level_name: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level_name.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
-
-
 def main() -> None:
-    args = parse_args()
-    config_path = Path(args.config).expanduser().resolve()
-    service_config = load_service_config(config_path)
-    log_level = args.log_level or service_config.log_level
-    configure_logging(log_level)
-    logging.info("Starting state_engine_service writing to %s", service_config.canonical_path)
-    service = StateEngineService(service_config)
-    signal.signal(signal.SIGTERM, service.request_stop)
-    signal.signal(signal.SIGINT, service.request_stop)
-    service.run(run_once=args.once)
+    def _create_service(config: ServiceConfig, _: argparse.Namespace) -> StateEngineService:
+        logging.info("State engine emitting %s", config.canonical_path)
+        return StateEngineService(config)
+
+    run_service(
+        service_name="state_engine_service",
+        description="Translate raw telemetry into canonical LED state",
+        default_config_path=DEFAULT_CONFIG_PATH,
+        load_config=load_service_config,
+        create_service=_create_service,
+    )
 
 
 if __name__ == "__main__":

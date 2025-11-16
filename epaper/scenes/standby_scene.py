@@ -1,10 +1,9 @@
 """Standby scene featuring a type-in and wipe animation."""
 from __future__ import annotations
 
-import itertools
-from typing import Dict, Iterator
+from typing import Iterator
 
-from PIL import Image, ImageChops, ImageFont
+from PIL import Image, ImageFont
 
 from ..backends import PanelInfo
 from ..core.renderer import blank, draw_center_text, wipe_mask

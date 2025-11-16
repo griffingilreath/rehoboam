@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import signal
 import sys
 import time
 from dataclasses import dataclass
@@ -15,7 +14,9 @@ from typing import Any, Dict, Optional
 import serial
 import yaml
 
+from jetson.common.led_codes import merge_activity_map, merge_health_map
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
+from jetson.common.service_runner import RunnerOverrides, run_service
 
 
 DEFAULT_CONFIG_PATH = "jetson/led_encoder_service/config.yaml"
@@ -53,7 +54,7 @@ class LedEncoderService:
         self._stop_requested = True
         self._close_serial()
 
-    def run(self) -> None:
+    def run(self, run_once: bool = False) -> None:
         next_send = 0.0
         self._health.mark_running(self._identity)
         while not self._stop_requested:
@@ -159,68 +160,49 @@ class LedEncoderService:
         self._serial = None
 
 
-def load_service_config(path: Path) -> ServiceConfig:
+def load_service_config(path: Path, overrides: RunnerOverrides | None = None) -> ServiceConfig:
     if not path.exists():
         print(f"Configuration file not found: {path}", file=sys.stderr)
         sys.exit(1)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    overrides = overrides or RunnerOverrides()
+    data_dir = overrides.data_dir or Path(data.get("data_dir", "./data")).expanduser().resolve()
+    log_level = overrides.log_level or (data.get("logging", {}) or {}).get("level", "INFO")
     config = ServiceConfig(
-        data_dir=Path(data.get("data_dir", "./data")).expanduser().resolve(),
+        data_dir=data_dir,
         canonical_state_filename=data.get("canonical_state_filename", DEFAULT_CANONICAL_FILENAME),
         serial_device=data.get("serial_device", "/dev/ttyACM0"),
         baud_rate=int(data.get("baud_rate", 115200)),
         frame_interval_seconds=float(data.get("frame_interval_seconds", 0.2)),
-        health_code_map={k.upper(): int(v) for k, v in (data.get("health_code_map") or {}).items()},
-        activity_type_map={str(k).lower(): int(v) for k, v in (data.get("activity_type_map") or {}).items()},
-        log_level=(data.get("logging", {}) or {}).get("level", "INFO"),
+        health_code_map=merge_health_map(data.get("health_code_map")),
+        activity_type_map=merge_activity_map(data.get("activity_type_map")),
+        log_level=log_level,
     )
-    if "UNKNOWN" not in config.health_code_map:
-        config.health_code_map["UNKNOWN"] = 4
-    if "none" not in config.activity_type_map:
-        config.activity_type_map["none"] = 0
-    if "generic_event" not in config.activity_type_map:
-        config.activity_type_map["generic_event"] = max({"none": 0, **config.activity_type_map}.values())
     return config
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Encode canonical LED state to serial frames")
-    parser.add_argument(
-        "--config",
-        default=DEFAULT_CONFIG_PATH,
-        help=f"Path to YAML config file (default: {DEFAULT_CONFIG_PATH})",
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
-        help="Override configured log level",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print frames to stdout instead of sending to serial",
-    )
-    return parser.parse_args()
-
-
-def configure_logging(level_name: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level_name.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
-
-
 def main() -> None:
-    args = parse_args()
-    config_path = Path(args.config).expanduser().resolve()
-    service_config = load_service_config(config_path)
-    log_level = args.log_level or service_config.log_level
-    configure_logging(log_level)
-    logging.info("Starting led_encoder_service using %s", service_config.serial_device)
-    service = LedEncoderService(service_config, dry_run=args.dry_run)
-    signal.signal(signal.SIGTERM, service.request_stop)
-    signal.signal(signal.SIGINT, service.request_stop)
-    service.run()
+    def _add_extra_args(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Print frames instead of sending them over serial",
+        )
+
+    def _create_service(config: ServiceConfig, args: argparse.Namespace) -> LedEncoderService:
+        logging.info("LED encoder using %s", config.serial_device)
+        return LedEncoderService(config, dry_run=args.dry_run)
+
+    run_service(
+        service_name="led_encoder_service",
+        description="Encode canonical LED state to serial frames",
+        default_config_path=DEFAULT_CONFIG_PATH,
+        load_config=load_service_config,
+        create_service=_create_service,
+        add_arguments=_add_extra_args,
+        supports_once=False,
+        supports_interval_override=False,
+    )
 
 
 if __name__ == "__main__":

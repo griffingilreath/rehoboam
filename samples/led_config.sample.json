@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2025-01-01T00:00:00Z",
+  "leds": [
+    {
+      "index": 0,
+      "name": "Ethernet In",
+      "type": "network",
+      "ip": "192.168.1.2",
+      "ha_availability_entity": "binary_sensor.router_online"
+    }
+  ]
+}

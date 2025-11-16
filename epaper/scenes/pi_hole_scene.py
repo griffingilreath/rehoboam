@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Dict, Iterator
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont
 
 from ..core.renderer import blank
 from ..core.scene import Frame, Scene

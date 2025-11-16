@@ -64,13 +64,28 @@ python -m epaper.service.main --config epaper/config.yaml
 2. Plug the panel into USB (it shows up as `/dev/sg*`).  
 3. Use `--backend usb` and override device/tool if needed: `python -m epaper.cli.main --backend usb --backend-option device=/dev/sg1 --backend-option tool=/opt/it8951usb`.
 
-### Partial updates & higher refresh modes
+### Partial updates, higher refresh modes, and references
 
-- The IT8951 controller exposes multiple waveforms: `DU` (fast monochrome partial refresh), `GC16` (16-level grayscale full refresh), `GL16`/`GLR16` (ghost-reduction variants). The Waveshare docs describe typical timings (`DU` ≈ 150 ms, `GC16` ≈ 1 s) [^waveshare].  
-- In code, `DisplayManager.partial(..., mode="DU")` triggers the faster waveform for animations like typing or notifications. After a sequence of partials, issue a `manager.full(..., mode="GC16")` to “clean” the panel and avoid ghosting.  
-- For very high refresh prototypes (e.g., Pi-hole live feed), combine small bounding boxes with partial updates to minimize flashing.
+- **Waveforms in practice:** IT8951 exposes `DU` (fast monochrome partial), `GC16` (16-level grayscale full), plus `GL16/GLR16` ghost-reduction curves. Expect ≈150 ms partials for a 200×200 window in `DU` and ≈1 s for a full `GC16` refresh on the 7.5–7.8" glass based on Waveshare’s timing charts and Greg Meyer’s SPI driver benchmarks [^waveshare] [^greg].
+- **Code pattern:** animate with partials, then clean up with a full refresh:
 
-[^waveshare]: See the official [Waveshare IT8951 examples](https://github.com/waveshare/IT8951) for waveform descriptions and timing charts.
+```python
+from epaper.core.display import DisplayManager
+
+manager = DisplayManager(backend="spi")
+panel = manager.open()
+frame = draw_scene(panel.width, panel.height)  # Pillow Image
+manager.partial(frame, box=(120, 80, 480, 160), mode="DU")
+# after several partials or every N seconds:
+manager.full(frame, mode="GC16")
+```
+
+- **Higher refresh experiments:** tighten the bounding boxes (only repaint the Pi-hole card, divergence bar, or ticker) and stick to `DU` for “live” widgets. The USB backend can batch partials via `it8951usb --partial`, while the SPI backend benefits from raising the SPI clock to 12 MHz (configure via `backend_option spi_hz=12000000`).
+- **More examples:** Waveshare’s repo shows partial-update command sequences and USB workflows; [`GregDMeyer/IT8951`](https://github.com/GregDMeyer/IT8951) includes rotation-aware SPI samples that informed `spi_backend.py`. The fake backend preserves rotation metadata so you can verify layouts before touching hardware.
+- **Vendor sources:** clone the upstream repos under `third_party/it8951/` (see `third_party/README.md`) so the build scripts and patches stay versioned alongside the rest of the rack software.
+
+[^waveshare]: Official [Waveshare IT8951 examples](https://github.com/waveshare/IT8951) document waveform codes, USB helpers, and refresh timing tables.
+[^greg]: Greg Meyer’s [`IT8951` Python driver](https://github.com/GregDMeyer/IT8951) illustrates SPI wiring, fast waveform selection, and partial-refresh usage mirrored by this repo.
 
 ### Configuring backend parameters
 
@@ -107,6 +122,12 @@ The CLI accepts quick overrides via `--backend-option key=value` (e.g., `--backe
 ```
 
 `collector_service` now writes this file automatically when HA events are enabled.
+
+## Safe start/stop
+
+- `python -m epaper.service.main --config epaper/config.yaml --shutdown` performs a final clean refresh and sleeps the panel; systemd uses this flag in `ExecStop` so accidental reboots don’t leave the glass mid-draw.
+- When using systemd, `rehoboam-epaper.service` depends on `REHOBOAM_DATA`/`REHOBOAM_HOME`. Confirm `journalctl -u rehoboam-epaper` shows `Panel entering deep sleep` before cutting power.
+- For manual testing, always end sessions with `--shutdown` (even on the fake backend) to mimic on-device behavior and prevent ghosting.
 
 ## Next steps
 

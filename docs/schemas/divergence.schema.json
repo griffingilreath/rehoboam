@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Rehoboam Divergence Output",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "timestamp", "score", "level", "metrics"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "timestamp": {"type": "integer"},
+    "score": {"type": "number"},
+    "level": {"type": "string"},
+    "metrics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "mean", "stdev", "z"],
+        "properties": {
+          "value": {"type": "number"},
+          "mean": {"type": "number"},
+          "stdev": {"type": "number"},
+          "z": {"type": "number"}
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["timestamp", "suggestion", "status"],
+        "properties": {
+          "timestamp": {"type": "integer"},
+          "trigger": {"type": "string"},
+          "target": {"type": "string"},
+          "suggestion": {"type": "string"},
+          "confidence": {"type": "number"},
+          "status": {"type": "string"},
+          "actions": {"type": "array", "items": {"type": "object"}}
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

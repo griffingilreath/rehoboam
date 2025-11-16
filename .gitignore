@@ -8,6 +8,9 @@ __pycache__/
 # Virtualenvs
 .venv/
 
+# PlatformIO build artifacts
+firmware/teensy_led_panel/.pio/
+
 # Runtime data artifacts
 /data/*
 !/data/.gitkeep

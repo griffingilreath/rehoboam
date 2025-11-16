@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import logging
-import signal
 import sys
 import time
 from dataclasses import dataclass, field
@@ -17,11 +15,14 @@ from typing import Dict, Optional
 import requests
 import yaml
 
+from jetson.common.json_store import atomic_write_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
+from jetson.common.service_runner import RunnerOverrides, run_service
 
 
 DEFAULT_CONFIG_PATH = "jetson/config_sync_service/config.yaml"
 DEFAULT_OUTPUT_FILE = "led_config.json"
+LED_CONFIG_SCHEMA_VERSION = "1.0"
 
 
 @dataclass
@@ -150,6 +151,7 @@ class ConfigSyncService:
     def sync_once(self) -> None:
         leds = [self._build_led_entry(idx) for idx in range(self.config.led_count)]
         payload = {
+            "schema_version": LED_CONFIG_SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "leds": leds,
         }
@@ -159,10 +161,7 @@ class ConfigSyncService:
             self._health.mark_running(self._identity)
             return
 
-        self._data_dir.mkdir(parents=True, exist_ok=True)
-        tmp_file = self._output_file.with_suffix(".tmp")
-        tmp_file.write_text(serialized, encoding="utf-8")
-        tmp_file.replace(self._output_file)
+        atomic_write_json(self._output_file, payload)
         self._last_serialized_payload = serialized
         logging.info("Wrote %s with %d LED entries", self._output_file, len(leds))
         self._health.mark_running(self._identity)
@@ -208,13 +207,14 @@ class ConfigSyncService:
         return results
 
 
-def load_service_config(path: Path) -> ServiceConfig:
+def load_service_config(path: Path, overrides: RunnerOverrides | None = None) -> ServiceConfig:
     if not path.exists():
         print(f"Configuration file not found: {path}", file=sys.stderr)
         sys.exit(1)
 
     with path.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
+    overrides = overrides or RunnerOverrides()
 
     try:
         ha_cfg = data["home_assistant"]
@@ -232,9 +232,13 @@ def load_service_config(path: Path) -> ServiceConfig:
         extra_fields=extra_fields,
     )
 
+    data_dir = overrides.data_dir or Path(data.get("data_dir", "./data")).expanduser().resolve()
+    poll_interval = overrides.poll_interval_seconds or float(data.get("poll_interval_seconds", 30))
+    log_level = overrides.log_level or (data.get("logging", {}) or {}).get("level", "INFO")
+
     config = ServiceConfig(
-        data_dir=Path(data.get("data_dir", "./data")).expanduser().resolve(),
-        poll_interval_seconds=float(data.get("poll_interval_seconds", 30)),
+        data_dir=data_dir,
+        poll_interval_seconds=poll_interval,
         led_count=int(data.get("led_count", 16)),
         home_assistant=HomeAssistantConfig(
             base_url=ha_cfg["base_url"],
@@ -244,7 +248,7 @@ def load_service_config(path: Path) -> ServiceConfig:
         ),
         templates=template,
         defaults=data.get("defaults", {}),
-        log_level=(data.get("logging", {}) or {}).get("level", "INFO"),
+        log_level=log_level,
     )
 
     return config
@@ -257,49 +261,18 @@ def _require_template_field(config: Dict[str, str], key: str) -> str:
     return value
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Synchronize LED metadata from Home Assistant")
-    parser.add_argument(
-        "--config",
-        default=DEFAULT_CONFIG_PATH,
-        help=f"Path to YAML config file (default: {DEFAULT_CONFIG_PATH})",
-    )
-    parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Run a single sync cycle and exit",
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
-        help="Override log level from config",
-    )
-    return parser.parse_args()
-
-
-def configure_logging(level_name: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level_name.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
-
-
 def main() -> None:
-    args = parse_args()
-    config_path = Path(args.config).expanduser().resolve()
-    service_config = load_service_config(config_path)
+    def _create_service(config: ServiceConfig, _: argparse.Namespace) -> ConfigSyncService:
+        logging.info("Config sync configured for %d LEDs", config.led_count)
+        return ConfigSyncService(config)
 
-    log_level = args.log_level or service_config.log_level
-    configure_logging(log_level)
-
-    logging.info("Starting config_sync_service with %d LEDs", service_config.led_count)
-
-    service = ConfigSyncService(service_config)
-
-    signal.signal(signal.SIGTERM, service.request_stop)
-    signal.signal(signal.SIGINT, service.request_stop)
-
-    service.run(run_once=args.once)
+    run_service(
+        service_name="config_sync_service",
+        description="Synchronize LED metadata from Home Assistant helpers",
+        default_config_path=DEFAULT_CONFIG_PATH,
+        load_config=load_service_config,
+        create_service=_create_service,
+    )
 
 
 if __name__ == "__main__":

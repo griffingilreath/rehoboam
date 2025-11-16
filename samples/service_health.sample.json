@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2025-01-01T00:00:10Z",
+  "services": [
+    {
+      "name": "collector_service",
+      "instance": null,
+      "host": "jetson-nano",
+      "pid": 1234,
+      "status": "running",
+      "updated_at": "2025-01-01T00:00:10Z",
+      "details": {}
+    }
+  ]
+}

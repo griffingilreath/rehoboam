@@ -28,8 +28,8 @@ Reads `canonical_state.json` and streams compact LED frames to the Teensy microc
    - `serial_device`: `/dev/ttyACM0` (Linux), `/dev/cu.usbmodem...` (macOS), or COM port on Windows.
    - `baud_rate`: must match the Teensy sketch.
    - `frame_interval_seconds`: send frames every N seconds (0.2 = 5 fps). Teensy can interpolate for smoother motion.
-   - `health_code_map`: mapping from canonical `health` strings to small ints recognized by firmware.
-   - `activity_type_map`: similar mapping for activity types; add custom entries if your firmware supports more effects.
+- `health_code_map`: mapping from canonical `health` strings to small ints recognized by firmware. Defaults are defined in `jetson/common/led_codes.py` (`HealthCode` IntEnum).
+- `activity_type_map`: similar mapping for activity types; `jetson/common/led_codes.py::ActivityType` documents the canonical codes the rack understands.
 
 ## Running
 

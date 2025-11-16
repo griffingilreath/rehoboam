@@ -49,10 +49,11 @@ python jetson/api_service/main.py \
 | `GET /config` | Returns `led_config.json` | Useful for dashboards to label LEDs |
 | `GET /history` | Returns `history.json` (optional) | Defaults to `{ "entries": [] }` |
 | `GET /health` | Aggregated service health data | Source file optional |
-| `GET /divergence` | Returns `divergence.json` | 404 until ML service runs |
+| `GET /divergence` | Returns `divergence.json` (score + metrics + recommendations array) | 404 until ML service runs |
+| `GET /recommendations` | Convenience view over the `recommendations` array | Mirrors `/divergence` timestamps, always returns a list |
 | `GET /info` | Metadata about file locations | Helpful for debugging |
 
-Future endpoints (WebSocket, divergence) can be layered on top without changing the data model.
+Future endpoints (WebSocket streaming, MQTT hooks) can be layered on top without changing the data model.
 
 ## Operational Notes
 

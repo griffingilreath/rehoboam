@@ -1,14 +1,14 @@
 """Utilities for writing simple service health heartbeats."""
 from __future__ import annotations
 
-import json
 import os
 import socket
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from jetson.common.json_store import atomic_write_json, load_json
 
 
 @dataclass
@@ -20,6 +20,8 @@ class ServiceIdentity:
 class ServiceHealthTracker:
     """Append/update service heartbeat entries in service_health.json."""
 
+    SCHEMA_VERSION = "1.0"
+
     def __init__(self, data_dir: Path, filename: str = "service_health.json") -> None:
         self._path = data_dir / filename
         self._host = socket.gethostname()
@@ -29,6 +31,7 @@ class ServiceHealthTracker:
         payload = self._read()
         services = payload.setdefault("services", [])
         timestamp = datetime.now(timezone.utc).isoformat()
+        payload.setdefault("schema_version", self.SCHEMA_VERSION)
         entry = {
             "name": identity.name,
             "instance": identity.instance,
@@ -59,16 +62,12 @@ class ServiceHealthTracker:
         self.update(identity, "error", {"message": message})
 
     def _read(self) -> Dict[str, Any]:
-        if not self._path.exists():
-            return {}
-        try:
-            return json.loads(self._path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return {}
+        data = load_json(self._path, {})
+        if not isinstance(data, dict):
+            data = {}
+        data.setdefault("schema_version", self.SCHEMA_VERSION)
+        data.setdefault("services", [])
+        return data
 
     def _write(self, payload: Dict[str, Any]) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        serialized = json.dumps(payload, indent=2, sort_keys=False)
-        tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(serialized, encoding="utf-8")
-        tmp.replace(self._path)
+        atomic_write_json(self._path, payload)

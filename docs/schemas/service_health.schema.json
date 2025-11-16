@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Rehoboam Service Health",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "services"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "updated_at"],
+        "additionalProperties": true,
+        "properties": {
+          "name": {"type": "string"},
+          "instance": {"type": ["string", "null"]},
+          "host": {"type": "string"},
+          "pid": {"type": "integer"},
+          "status": {"type": "string"},
+          "updated_at": {"type": "string", "format": "date-time"},
+          "details": {"type": "object", "additionalProperties": true}
+        }
+      }
+    }
+  }
+}

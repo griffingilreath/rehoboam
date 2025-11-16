@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Rehoboam Canonical State",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "generated_at", "leds"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string"},
+    "timestamp": {"type": "integer", "minimum": 0},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "context": {"type": "object", "additionalProperties": true},
+    "leds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index", "health", "activity_level", "activity_type"],
+        "additionalProperties": true,
+        "properties": {
+          "index": {"type": "integer", "minimum": 0},
+          "health": {"type": "string"},
+          "activity_level": {"type": "number", "minimum": 0},
+          "activity_type": {"type": "string"}
+        }
+      }
+    }
+  }
+}
