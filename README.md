@@ -320,6 +320,12 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
   ruff check .
   mypy --config-file pyproject.toml jetson
   ```
+- For a more visual local runner, use the included script (adds colors and icons):
+  ```bash
+  source .venv/bin/activate
+  pip install -r requirements-dev.txt  # once
+  python run_tests.py
+  ```
 - GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) provisions a venv, installs `requirements-dev.txt`, runs `ruff`, `mypy`, and the full unittest suite on pushes/PRs.
 
 ## Observability & Logs
