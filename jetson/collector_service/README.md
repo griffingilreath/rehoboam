@@ -2,6 +2,8 @@
 
 Collects raw device telemetry (reachability, Home Assistant availability, Pi-hole stats, and recent events) and writes the shared `raw_state.json` consumed by the state engine.
 
+---
+
 ## Responsibilities
 
 - Load the latest `led_config.json` so device metadata stays synced.
@@ -18,6 +20,8 @@ Collects raw device telemetry (reachability, Home Assistant availability, Pi-hol
 - Home Assistant long-lived token and reachable base URL.
 - Optional Pi-hole API token (recommended) if monitoring Pi-hole devices.
 - `ping` binary available (default on Linux/macOS; on Windows it also works out-of-the-box).
+
+---
 
 ## Configuration
 
@@ -46,6 +50,8 @@ Collects raw device telemetry (reachability, Home Assistant availability, Pi-hol
 
 You can add these helpers to Home Assistant and include them via `config_sync_service` `templates.extra_fields`.
 
+---
+
 ## Running
 
 ```bash
@@ -56,6 +62,8 @@ python jetson/collector_service/main.py \
 - `--once` collects a single snapshot (handy for debugging).
 - `--log-level DEBUG` temporarily increases verbosity without editing config.
 - Under systemd, make sure `WorkingDirectory` points to the repo root so relative paths resolve; or use absolute paths in `config.yaml`.
+
+---
 
 ## Output Format
 
@@ -116,6 +124,8 @@ python jetson/collector_service/main.py \
 }
 ```
 
+---
+
 ## Operational Notes & Tips
 
 - The service reloads `led_config.json` every cycle so edits in Home Assistant propagate immediately.
@@ -129,6 +139,8 @@ python jetson/collector_service/main.py \
 - `context_entities` let you snapshot weather/occupancy/power sensors directly from HA so downstream ML models can reason about the environment (rain, daypart, who is home, etc.).
 - Heartbeats are written to `service_health.json` on every successful loop so the API can surface collector status; errors flip the recorded status to `error` for quick diagnosis.
 
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -139,11 +151,15 @@ python jetson/collector_service/main.py \
 | Pi-hole stats missing | `type` not set to `pihole` or token missing | Update HA helpers/templates accordingly |
 | `Ping command failed` | Ping binary missing | Install `iputils-ping` (Linux) or adjust firewall |
 
+---
+
 ## Extending
 
 - Add SNMP polling by enriching `CollectorService._collect_device_state` for LEDs tagged with `type: switch`.
 - Persist events to a queue (Redis/MQTT) by hooking into `EventBuffer.add` when you need deeper analytics.
 - Support alternate activity sources (e.g., Pi-hole log tail) by appending entries to the shared event buffer.
+
+---
 
 ## Next Step
 

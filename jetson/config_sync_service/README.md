@@ -2,6 +2,8 @@
 
 Synchronizes LED metadata from Home Assistant helper entities into the Jetson's shared `data/led_config.json` file. Every other Jetson service consumes this canonical config, so keeping it current and reliable is critical.
 
+---
+
 ## Prerequisites
 
 - Python 3.9+ on the Jetson (or dev machine if running remotely).
@@ -10,7 +12,24 @@ Synchronizes LED metadata from Home Assistant helper entities into the Jetson's 
 - Long-lived access token with permission to read the helper entities (Profile → Long-Lived Access Tokens).
 - Helper entities created (e.g. `input_text.led0_name`, `input_text.led0_ip`, etc.) and exposed on a dashboard for easy editing.
 
-**Quick Setup:** See [`docs/home_assistant_helpers.example.yaml`](../../docs/home_assistant_helpers.example.yaml) for a complete example configuration with all 16 LEDs pre-configured. Copy it into your Home Assistant configuration and customize as needed.
+**Quick Setup:** 
+
+1. Use the setup wizard to configure HA connection:
+   ```bash
+   python devtools/setup_wizard.py
+   # Select option 1 (Home Assistant settings)
+   ```
+
+2. Export HA helpers configuration:
+   ```bash
+   python devtools/cli.py export-ha-config --output helpers.yaml
+   ```
+
+3. Copy `helpers.yaml` into your Home Assistant configuration and restart HA.
+
+Alternatively, see [`docs/home_assistant_helpers.example.yaml`](../../docs/home_assistant_helpers.example.yaml) for a complete example configuration with all 16 LEDs pre-configured.
+
+---
 
 ## Configuration
 
@@ -35,6 +54,8 @@ Synchronizes LED metadata from Home Assistant helper entities into the Jetson's 
 - Omit a field entirely by leaving the template blank or removing it. (The service ignores empty template strings.)
 - If Home Assistant uses zero-padded helpers (`led00_name`), reflect that in the template: `input_text.led{index:02d}_name`.
 
+---
+
 ## Running
 
 ```bash
@@ -45,6 +66,8 @@ python jetson/config_sync_service/main.py \
 - Add `--once` to perform a single sync (useful for CI/tests).
 - Override log level temporarily with `--log-level DEBUG`.
 - Deploy under systemd by pointing ExecStart at the command above. Ensure `WorkingDirectory` is the repo root (or adjust `--config` paths).
+
+---
 
 ## Output
 
@@ -67,6 +90,8 @@ python jetson/config_sync_service/main.py \
   ```
 - Fields beyond `index/name/type` come from helper templates or defaults. Unknown/blank values are skipped so downstream services can rely on clean data.
 
+---
+
 ## Operational Notes
 
 - The service tracks the last serialized payload and only rewrites the file when data changes. Downstream watchers can rely on file modification time to detect updates.
@@ -74,6 +99,8 @@ python jetson/config_sync_service/main.py \
 - If Home Assistant is unreachable, the service logs a warning and keeps the previous config; it does not clear LEDs to avoid breaking other agents.
 - Use `journalctl -u config-sync` (or your supervisor logs) to monitor warnings about missing helper entities.
 - On every successful cycle the service updates `service_health.json` (via the shared `ServiceHealthTracker`) so the API/dashboard can surface its status; failures mark the entry as `error`.
+
+---
 
 ## Troubleshooting
 
@@ -85,11 +112,15 @@ python jetson/config_sync_service/main.py \
 | `led_config.json` missing fields | Helper returned empty state and no default supplied | Set defaults or fill in HA dashboard |
 | SSL errors | Self-signed HA cert | Set `verify_ssl: false` (or install CA cert on Jetson) |
 
+---
+
 ## Extending
 
 - Add more fields by listing them under `templates.extra_fields` and referencing new helpers (e.g. `rack_unit`, `icon`).
 - If you add a second HA instance, run multiple copies with different configs but distinct `data_dir` targets.
 - Wrap the service in a container: mount `/app/data` for shared JSON files, inject config via secrets/ConfigMap.
+
+---
 
 ## Next Steps
 

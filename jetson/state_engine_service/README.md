@@ -2,6 +2,8 @@
 
 Consumes `led_config.json` and `raw_state.json`, applies deterministic rules for health + activity, and publishes the canonical LED state consumed by the encoder and API services.
 
+---
+
 ## Responsibilities
 
 - Normalize raw metrics into the shared `canonical_state.json` schema.
@@ -14,6 +16,8 @@ Consumes `led_config.json` and `raw_state.json`, applies deterministic rules for
 - Python 3.9+ and `pip install -r jetson/requirements.txt`.
 - `config_sync_service` + `collector_service` running so `led_config.json` and `raw_state.json` stay current.
 - Optional: populate `activity_hint` or `event_entities` fields via Home Assistant helpers to fine-tune behavior.
+
+---
 
 ## Configuration
 
@@ -45,6 +49,8 @@ Consumes `led_config.json` and `raw_state.json`, applies deterministic rules for
 - `activity_hint`: override default activity type label (`light_change`, `dns_queries`, `blind_move`, etc.).
 - `event_entities`: list/comma string of HA entity IDs whose events should boost activity.
 
+---
+
 ## Running
 
 ```bash
@@ -54,6 +60,8 @@ python jetson/state_engine_service/main.py \
 
 - Append `--once` for single-cycle testing (useful in CI or unit tests).
 - Override logging temporarily with `--log-level DEBUG` when tuning thresholds.
+
+---
 
 ## Output
 
@@ -84,6 +92,8 @@ python jetson/state_engine_service/main.py \
 
 Downstream services (`led_encoder_service`, dashboards, ML) read this file as the single source of truth. When history logging is enabled, each snapshot is also appended to `history.json` (rolling window) for ML and e-ink clients.
 
+---
+
 ## Operational Notes
 
 - The service caches per-LED state in memory to provide smooth decay; restarting it resets activity levels. If you need persistence, serialize `_per_led_state` on shutdown/startup.
@@ -92,6 +102,8 @@ Downstream services (`led_encoder_service`, dashboards, ML) read this file as th
 - Health decisions favor availability sensors when present but fall back to ping reachability.
 - Custom health logic is easy to extend: tweak `_determine_health` rules or add new thresholds in the config.
 - Each loop updates `service_health.json`, making the API `/health` endpoint aware of state-engine liveness/failures.
+
+---
 
 ## Troubleshooting
 
@@ -102,11 +114,15 @@ Downstream services (`led_encoder_service`, dashboards, ML) read this file as th
 | Activity never increases | No `events_last_window` data or thresholds too high | Ensure collector emits event counts, adjust `event_boost` |
 | Pi-hole LED health never warns | RTT below `warning_latency_ms` | Lower threshold or inject additional rules |
 
+---
+
 ## Extending
 
 - Track additional health inputs (HTTP checks, SNMP stats) by enriching `_determine_health`.
 - Feed divergence/anomaly scores back into `canonical_state.json` by appending extra fields (e.g., `divergence` per LED or globally).
 - Emit metrics (Prometheus/StatsD) per LED for observability.
+
+---
 
 ## Next Step
 

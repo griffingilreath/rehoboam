@@ -1,6 +1,8 @@
 # api_service
 
-FastAPI application that serves the Jetson’s canonical LED state, configuration, history, and service health so dashboards and tools can stay in sync without reading files directly.
+FastAPI application that serves the Jetson's canonical LED state, configuration, history, and service health so dashboards and tools can stay in sync without reading files directly.
+
+---
 
 ## Responsibilities
 
@@ -9,11 +11,15 @@ FastAPI application that serves the Jetson’s canonical LED state, configuratio
 - Provide lightweight caching so repeated requests don’t thrash the filesystem.
 - Support CORS for front-ends hosted on different origins.
 
+---
+
 ## Prerequisites
 
 - Python 3.9+ and `pip install -r jetson/requirements.txt` (brings in FastAPI + Uvicorn).
 - Upstream services writing `led_config.json`, `canonical_state.json`, and optionally `history.json`, `service_health.json`.
 - Open TCP port on the Jetson (default 8000) reachable by clients.
+
+---
 
 ## Configuration
 
@@ -41,6 +47,8 @@ python jetson/api_service/main.py \
 - Override host/port temporarily with `--host 127.0.0.1 --port 9000`.
 - For systemd, point `ExecStart` at the command above and set `WorkingDirectory` to the repo root.
 
+---
+
 ## Endpoints
 
 | Path | Description | Notes |
@@ -55,13 +63,17 @@ python jetson/api_service/main.py \
 
 Future endpoints (WebSocket streaming, MQTT hooks) can be layered on top without changing the data model.
 
+---
+
 ## Operational Notes
 
 - The JSON cache validates both TTL and file mtime, so updates propagate immediately when files change.
 - If the history or health files aren’t present, the API gracefully returns empty payloads rather than errors.
 - CORS is disabled by default; specify origins once the dashboard hostnames are known.
 - For HTTPS termination, place Nginx/Caddy/Traefik in front of the service or run FastAPI behind a reverse proxy.
-- `/health` simply reflects the contents of `service_health.json`, which every Jetson agent now updates, so pointing the API at the shared data directory is all that’s required for live status. Likewise `/divergence` is a thin wrapper over `divergence.json`; connect the ML service to populate it.
+- `/health` simply reflects the contents of `service_health.json`, which every Jetson agent now updates, so pointing the API at the shared data directory is all that's required for live status. Likewise `/divergence` is a thin wrapper over `divergence.json`; connect the ML service to populate it.
+
+---
 
 ## Troubleshooting
 
@@ -72,11 +84,15 @@ Future endpoints (WebSocket streaming, MQTT hooks) can be layered on top without
 | `Invalid JSON` logs | Upstream file being written while read | Files are atomic by design; ensure services use tmp+rename (already implemented) |
 | Port already in use | Another process bound to same port | Change config port or stop other service |
 
+---
+
 ## Extending
 
 - Add WebSocket endpoint to push canonical updates (`fastapi.websockets`).
 - Stream history from SQLite or another datastore once logging lands.
 - Bundle OpenAPI docs (already available at `/docs`) into your dashboard for better self-service debugging.
+
+---
 
 ## Next Step
 

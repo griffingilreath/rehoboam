@@ -1,6 +1,8 @@
 # ml_service
 
-Analyzes `data/history.json` snapshots produced by `state_engine_service` and emits a divergence score (`data/divergence.json`). The initial implementation uses simple z-scores so it’s transparent and easy to run on a Jetson Nano, but the structure is designed to grow into a more predictive system.
+Analyzes `data/history.json` snapshots produced by `state_engine_service` and emits a divergence score (`data/divergence.json`). The initial implementation uses simple z-scores so it's transparent and easy to run on a Jetson Nano, but the structure is designed to grow into a more predictive system.
+
+---
 
 ## Current Behavior
 
@@ -22,6 +24,8 @@ Analyzes `data/history.json` snapshots produced by `state_engine_service` and em
   }
   ```
 - **Consumers:** `/divergence` API endpoint, e-paper divergence scene, dashboards.
+
+---
 
 ## Roadmap: Predictive / Proactive Layer
 

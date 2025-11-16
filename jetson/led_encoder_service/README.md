@@ -1,6 +1,8 @@
 # led_encoder_service
 
-Reads `canonical_state.json` and streams compact LED frames to the Teensy microcontroller over serial. This is the final glue between the Jetson’s canonical model and the physical LED strip.
+Reads `canonical_state.json` and streams compact LED frames to the Teensy microcontroller over serial. This is the final glue between the Jetson's canonical model and the physical LED strip.
+
+---
 
 ## Responsibilities
 
@@ -14,11 +16,15 @@ Reads `canonical_state.json` and streams compact LED frames to the Teensy microc
 
 Before deploying, use `devtools/test_led_panel.py` to verify the Teensy connection and map LEDs to ports. See the main `README.md` for usage instructions.
 
+---
+
 ## Prerequisites
 
 - Python 3.9+ and `pip install -r jetson/requirements.txt` (needs `pyserial`).
 - Teensy connected to the Jetson (`/dev/ttyACM*` or similar) with matching baud rate.
 - Upstream services (`state_engine_service`) producing `canonical_state.json` in the shared data directory.
+
+---
 
 ## Configuration
 
@@ -35,6 +41,8 @@ Before deploying, use `devtools/test_led_panel.py` to verify the Teensy connecti
 - `health_code_map`: mapping from canonical `health` strings to small ints recognized by firmware. Defaults are defined in `jetson/common/led_codes.py` (`HealthCode` IntEnum).
 - `activity_type_map`: similar mapping for activity types; `jetson/common/led_codes.py::ActivityType` documents the canonical codes the rack understands.
 
+---
+
 ## Running
 
 ```bash
@@ -44,6 +52,8 @@ python jetson/led_encoder_service/main.py \
 
 - Add `--dry-run` to print frames instead of using serial (perfect for unit tests or dashboard prototyping).
 - Override log level with `--log-level DEBUG` to inspect every frame.
+
+---
 
 ## Frame Format
 
@@ -67,6 +77,8 @@ Frames follow the structure laid out in `SERVICES_AND_AGENTS.md`:
 
 Each JSON frame is newline-delimited so the Teensy parser can read line-by-line.
 
+---
+
 ## Operational Notes
 
 - Frames are only sent when the payload changes, reducing unnecessary serial traffic.
@@ -75,6 +87,8 @@ Each JSON frame is newline-delimited so the Teensy parser can read line-by-line.
 - When `canonical_state.json` is missing or malformed, the service logs a warning and waits for the next interval.
 - Keep the frame interval aligned with Teensy expectations; very high frame rates can saturate the serial link without benefit.
 - Successful frame transmissions update `service_health.json` so `/health` always reflects encoder status.
+
+---
 
 ## Troubleshooting
 
@@ -85,11 +99,15 @@ Each JSON frame is newline-delimited so the Teensy parser can read line-by-line.
 | Teensy not parsing frames | Firmware expects different mapping | Align `health_code_map` / `activity_type_map` with firmware enums |
 | High latency / drops | Frame interval too low or USB bottleneck | Increase `frame_interval_seconds` |
 
+---
+
 ## Extending
 
 - Compress frames further (e.g., binary) by swapping `_build_frame` and the Teensy decoder simultaneously.
 - Add optional CRC or checksum fields for more robust serial transmission.
 - Expose a WebSocket mirror so dashboards can preview LED output without reading `canonical_state.json`.
+
+---
 
 ## Next Step
 
