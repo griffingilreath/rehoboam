@@ -455,6 +455,7 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
   mypy --config-file pyproject.toml jetson
   ```
 - If you install tools with `pip --user`, add `~/.local/bin` to your `PATH` so commands like `ruff` and `mypy` are available without `python -m`.
+- **Optional pre-commit hooks:** Install them once with `pip install pre-commit && pre-commit install`. The hook runs `ruff --fix` and `ruff-format` automatically before each commit.
 - **Visual test runner:** For a more visual local runner, use the included script (adds colors and icons):
   ```bash
   source .venv/bin/activate

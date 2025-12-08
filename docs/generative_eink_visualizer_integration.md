@@ -50,9 +50,8 @@ Pi-hole / Sensors ├─> collector_service → data/raw_state.json
    - Copy `channels.example.yaml` → `channels.yaml`, then tune weights/curves.
 
 2. **Bring up the channel daemon (Mac Mini)**
-   - Create `visualizers/generative_eink/examples/channel_daemon.py` (TODO) or adapt `pi_weight_demo` to read actual HA events.
-   - Connect to Home Assistant via WebSocket API (`/api/websocket`), convert `state_changed` events into `EntityStateEvent`, and feed `VisualizerRuntime.handle_event`.
-   - Every 1–5 seconds, emit `runtime.get_channels()` as JSON to `~/rehoboam/data/generative_channels.json` and publish to MQTT (`rehoboam/viz/channels`).
+   - Flesh out `visualizers/generative_eink/channel_daemon.py` (currently a stub) so it connects to Home Assistant, turns `state_changed` events into `EntityStateEvent`, and feeds `VisualizerRuntime.handle_event`.
+   - Every 1–5 seconds, emit `runtime.get_channels()` as JSON to `~/rehoboam/data/generative_channels.json` and/or publish to MQTT (`rehoboam/viz/channels`).
 
 3. **Bridge to the renderer (Pi 4 + IT8951)**
    - Option A: Share the JSON file over SMB/NFS and run a watcher that reloads when the timestamp changes.
