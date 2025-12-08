@@ -522,6 +522,10 @@ When editing services (or letting Cursor refactor code), keep these data contrac
 - [`docs/SERVICES_AND_AGENTS.md`](docs/SERVICES_AND_AGENTS.md): In-depth specs for every agent, firmware responsibilities, client layouts
 - [`docs/ML_ROADMAP.md`](docs/ML_ROADMAP.md): Phased plan for data enrichment, feature extraction, recommendations, and proactive control loops
 - [`docs/home_assistant.md`](docs/home_assistant.md): Helper definitions + Lovelace layout for configuring rack ports from HA. See [`docs/home_assistant_helpers.example.yaml`](docs/home_assistant_helpers.example.yaml) for a complete, ready-to-use configuration example
+- [`docs/generative_eink_visualizer_research.md`](docs/generative_eink_visualizer_research.md): Research notes, historical influences, and channel semantics for the generative e-ink experience
+- [`docs/generative_eink_visualizer_integration.md`](docs/generative_eink_visualizer_integration.md): Wiring plan covering the HA channel daemon, transport, and Pi renderer
+- [`docs/generative_eink_next_steps.md`](docs/generative_eink_next_steps.md): Phase-by-phase roadmap for delivering the generative visualizer
+- [`docs/it8951_driver_playbook.md`](docs/it8951_driver_playbook.md): Raspberry Pi + IT8951 hardware/driver setup playbook, including tuning tips for Pi 3B+/4
 - Service-specific READMEs under `jetson/*/`, `display_clients/*/`, and `epaper/` cover configuration, operations, and troubleshooting
 
 ### Rack Hardware & Inspiration
