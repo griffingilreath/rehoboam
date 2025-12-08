@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Iterable, Literal, Mapping, MutableMapping
+from typing import Any, Iterable, Literal, Mapping, MutableMapping
 
 FeatureType = Literal["numeric", "binary", "attribute", "state_enum", "event_rate"]
 CurveType = Literal["linear", "smoothstep", "ease_in", "ease_out"]

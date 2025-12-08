@@ -26,7 +26,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Dict, Iterable
+from typing import Callable, Dict
 
 from PIL import Image, ImageDraw, ImageFont
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
-from .config.models import EntitySpec, FeatureDefinition, FeatureType
+from .config.models import EntitySpec, FeatureDefinition
 from .types import EntityStateEvent, FeatureSnapshot
 
 
