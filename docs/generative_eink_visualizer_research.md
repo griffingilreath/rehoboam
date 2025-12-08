@@ -46,6 +46,27 @@ This document distills the newly added research artifacts and strategy notes for
 - **DIY Waveshare community (2015+):** Open-source drivers, partial refresh tricks, and LUT hacking show the hardware tolerances (max ~1–2 Hz region updates) that constrain our animation cadence.
 - **Contemporary art deployments:** Projects like Martin Lorenz’s “Executive Coloring Device” or e-ink storefronts demonstrate layering textures and dithers instead of solid fills—a technique we adopt for `mid-layer structure`.
 
+### Contributor Gallery
+
+| Name | Domain | Notable Work | Influence on This Visualizer |
+|------|--------|--------------|-------------------------------|
+| **Ben Laposky** (1914–2000) | Analog generative art | *Oscillons* (1950s) using oscilloscopes to draw parametric curves. | Validates using mathematical feature spaces to produce fluid, organic backgrounds. |
+| **Vera Molnár** (1924–2023) | Algorithmic art | Early plotter drawings like *Interruptions* (1968). | Inspires the documented “parameter catalogs” and deliberate rule-based compositions. |
+| **Frieder Nake** & **Georg Nees** | Computer graphics | First exhibited computer art (1965, Stuttgart). | Reinforces the need for deterministic, code-driven line work for mid-layer structures. |
+| **Harold Cohen** | AI art | *AARON* autonomous drawing system (1970s–2000s). | Shows long-running systems benefit from transparent semantic vocabularies. |
+| **John Whitney** | Motion graphics | Mechanical + computer animations (*Catalog*, 1961). | Encourages treating channel modulation as musical orchestration. |
+| **Casey Reas & Ben Fry** | Processing founders | Open-sourced Processing (2001). | Cemented the split between data engines and rendering sketches mirrored in our runtime. |
+| **John Maeda** | Design computation | *Design by Numbers*, MIT Media Lab. | Advocates for simple, declarative creative code—mirrors our YAML-first approach. |
+| **Hiroshi Ishii** | Tangible Bits | MIT Tangible Media Lab (1990s+). | Informs the mapping of abstract data to tactile metaphors (glyph lexicon). |
+| **Mark Weiser & John Seely Brown** | Calm technology | Xerox PARC research (1995). | Directly drives the peripheral awareness goals and ritual refresh cadence. |
+| **Amber Case** | Calm tech advocacy | *Calm Technology* (2015). | Reminds us to make failure states and alerts gentle yet legible. |
+| **Nicholas Negroponte** | Ambient communication | *The Architecture Machine* (1970). | Encourages adaptive, environment-aware behavior like `long_term_drift`. |
+| **Mary Lou Jepsen** & **Joseph Jacobson** | E Ink pioneers | Co-founded E Ink Corporation (1997). | Provide the hardware constraints (grayscale LUTs, partial refresh) the runtime respects. |
+| **Janne Kyttanen / Ambient Devices team** | Ambient consumer products | Ambient Orb (2002). | Proves appetite for single-value ambient cues, leading to semantic channel distillation. |
+| **Refik Anadol** | Data sculpture | *WDCH Dreams*, *Machine Hallucinations*. | Demonstrates emotional resonance of aggregated data “weather,” inspiring layered drift. |
+| **Martin Lorenz** | E-ink installations | *Executive Coloring Device* (2018). | Validates dithering, layering, and slow-evolving compositions on e-paper mediums. |
+| **Jeanne Dietrich & Waveshare OSS authors** | Hardware engineering | Reverse-engineered partial refresh LUTs. | Their documentation informs update cadence and ghosting mitigation tactics we adopt. |
+
 ### Lessons Extracted
 
 1. **Parameter catalogs > ad-hoc tweaks:** Early generative artists documented every variable; hence our YAML configs with explicit normalization ranges and channel weights.
