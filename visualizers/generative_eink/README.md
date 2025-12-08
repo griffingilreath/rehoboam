@@ -72,3 +72,7 @@ sudo python -m visualizers.generative_eink.examples.pi_weight_demo --backend usb
 ```
 
 The script loads the example entity/channel configs, feeds them with synthetic sine/pulse waveforms, renders a simple grayscale composition, and pushes frames through the existing epaper backends. Hardware mode requires `pip install pillow it8951` plus the appropriate driver binaries (see `third_party/it8951/README.md`).
+
+## Integration Plan
+
+See [`docs/generative_eink_visualizer_integration.md`](../../docs/generative_eink_visualizer_integration.md) for wiring details between the Home Assistant listener (channel daemon), transport layer (file/HTTP/MQTT), and the Pi-side renderer that drives the IT8951 panel. The doc also outlines future work (generative scene under `epaper/`, channel heartbeat reporting, systemd units) to keep the new visualizer aligned with the rest of Rehoboam.
