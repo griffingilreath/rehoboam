@@ -31,6 +31,11 @@ class VisualizerRuntime:
         features = self._feature_space.as_dict()
         return self._channel_space.evaluate(features)
 
+    def set_feature(self, feature_id: str, value: float) -> None:
+        """Directly set a normalized feature value (useful for simulations/tests)."""
+
+        self._feature_space.set_feature(feature_id, value)
+
     def get_features(self) -> dict[str, float]:
         return self._feature_space.as_dict()
 
