@@ -76,3 +76,7 @@ The script loads the example entity/channel configs, feeds them with synthetic s
 ## Integration Plan
 
 See [`docs/generative_eink_visualizer_integration.md`](../../docs/generative_eink_visualizer_integration.md) for wiring details between the Home Assistant listener (channel daemon), transport layer (file/HTTP/MQTT), and the Pi-side renderer that drives the IT8951 panel. The doc also outlines future work (generative scene under `epaper/`, channel heartbeat reporting, systemd units) to keep the new visualizer aligned with the rest of Rehoboam.
+
+## Next Steps Checklist
+
+Longer-term work items (channel daemon, renderer scene, telemetry, ops) are organized in [`docs/generative_eink_next_steps.md`](../../docs/generative_eink_next_steps.md). Reference that plan when opening pull requests so each change ties back to a specific milestone.
