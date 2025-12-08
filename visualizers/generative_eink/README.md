@@ -55,3 +55,20 @@ visualizers/
    - Include smoke tests that load both example configs to ensure they stay schema-compliant.
 
 As these steps progress, keep the legacy `epaper` module untouched so existing deployments remain stable.
+
+## Raspberry Pi Test Loop
+
+To see the semantic channels animate on real hardware (or just save PNGs), use the included test driver:
+
+```bash
+# Fake backend that writes frames to /tmp/epaper_frames
+python -m visualizers.generative_eink.examples.pi_weight_demo --backend fake
+
+# On a Pi with the Waveshare IT8951 SPI HAT + it8951 Python lib
+sudo python -m visualizers.generative_eink.examples.pi_weight_demo --backend spi
+
+# If you use the USB helper binary from epaper/backends/usb_backend.py
+sudo python -m visualizers.generative_eink.examples.pi_weight_demo --backend usb
+```
+
+The script loads the example entity/channel configs, feeds them with synthetic sine/pulse waveforms, renders a simple grayscale composition, and pushes frames through the existing epaper backends. Hardware mode requires `pip install pillow it8951` plus the appropriate driver binaries (see `third_party/it8951/README.md`).
