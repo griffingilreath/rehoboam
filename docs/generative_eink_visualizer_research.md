@@ -17,6 +17,42 @@ This document distills the newly added research artifacts and strategy notes for
 - **Slow, meaningful change on e-ink:** Lean into the 16-level grayscale palette, partial refresh tactics, and ritual full refreshes instead of constant animation.
 - **Configuration over code:** New sensors or channels should be added through YAML/JSON config rather than Python edits wherever possible.
 
+## Historical Context & Influence Map
+
+### Data-Driven Generative Systems (1950s–Present)
+
+- **Plotter pioneers (1950s–1970s):** Ben Laposky’s oscilloscope compositions, Frieder Nake’s algorithmic drawings, and Vera Molnár’s “machine imaginaire” established parametric systems where tweaking numerical inputs yielded radically different aesthetics. Their emphasis on parameter catalogs foreshadows our channel weights.
+- **Algorist manifesto (1968 onward):** Jean-Pierre Hébert and Roman Verostko advocated for transparent, reproducible rulesets—mirrored in our choice to keep entity/channel configs declarative and versionable.
+- **Software art era (1990s–2000s):** John Maeda’s Design by Numbers and Casey Reas/Ben Fry’s Processing culture normalized separation between *data engines* and *render scripts*, reinforcing today’s runtime abstraction.
+- **ML-infused generativity (2010s+):** Projects like Refik Anadol’s data sculptures show the power of long-term trend encoding and multi-channel fusion; we borrow the idea of slow “data weather” rather than literal dashboards.
+
+### Calm Technology & Ambient Displays
+
+- **Weiser & Brown (1995):** “Calm technology” defined devices that inform without overwhelming. Their guidelines (peripheral awareness, center-of-attention transitions) justify the emphasis on semantic channels that modulate layers gradually.
+- **Tangible Bits (1997, Hiroshi Ishii):** Highlighted mapping abstract data to physical metaphors, which inspires the glyph vocabulary and zoned canvas approach.
+- **Ambient Devices (early 2000s):** The Ambient Orb and Nabaztag rabbit proved people embrace diffuse signals (color shifts, ear movements) over raw numbers. Our visualizer inherits that by avoiding per-entity readouts.
+- **Google’s “Little Signals” (2022 concept):** Explored multiple modalities (movement, air, light) instead of screens. We adapt the principle by dedicating unique textures/glyphs per channel to avoid cognitive overload.
+
+### Smart Home & Data Spine Evolution
+
+- **X10/Insteon era (1970s–2000s):** Limited bandwidth, poor reliability—why early visualizations stayed simplistic.
+- **HomeKit / SmartThings (2014+):** Vendor silos forced per-device integrations; we avoid this historical fragmentation by anchoring on Home Assistant’s unified entity model (open-source convergence circa 2017–2020).
+- **Modern HA (2020+):** Event bus, MQTT bridges, and robust history APIs finally make multi-modal feature synthesis feasible at home scale. The visualizer leverages this maturity to compute aggregates like `motion_house_last_hour` without duct tape.
+
+### E-Paper & Grayscale Display Lineage
+
+- **Gyricon (1970s Xerox PARC):** Introduced bistable beads requiring low refresh—established the idea that content should hold meaning even when static.
+- **E Ink Corp & Kindle (2007):** Mainstreamed 16-level grayscale and partial refresh, but also highlighted ghosting artifacts; informs our decision to choreograph regional updates and occasional “clearing” rituals.
+- **DIY Waveshare community (2015+):** Open-source drivers, partial refresh tricks, and LUT hacking show the hardware tolerances (max ~1–2 Hz region updates) that constrain our animation cadence.
+- **Contemporary art deployments:** Projects like Martin Lorenz’s “Executive Coloring Device” or e-ink storefronts demonstrate layering textures and dithers instead of solid fills—a technique we adopt for `mid-layer structure`.
+
+### Lessons Extracted
+
+1. **Parameter catalogs > ad-hoc tweaks:** Early generative artists documented every variable; hence our YAML configs with explicit normalization ranges and channel weights.
+2. **Peripheral calm requires predictable rituals:** Calm tech history shows people trust devices with recurring behaviors, motivating sunrise/sunset full refresh cycles.
+3. **Unified abstractions beat one-off integrations:** Smart-home history warns against siloed pipelines, so the runtime ingests *only* HA entities to stay future-proof.
+4. **Bistable media needs slow storytelling:** E-ink lineage underlines ghosting and latency, so we treat the composition as evolving tableaux, not a live video feed.
+
 ## Stage 1: Raw Entities → Feature Space
 
 1. **Entity catalog lives in config** with an `id` (matching HA entity_id) and one or more feature definitions.
@@ -115,6 +151,19 @@ Channels are defined as weighted formulas over features and can include polarity
    - Add alert logging to correlate HA anomalies with what the display showed.
 6. **Stability + ops**
    - Add watchdog timers, config hot-reload, and snapshotting of feature/channel state so the visualizer can survive reboots without dramatic jumps.
+
+## History-Informed Direction
+
+| Historical thread                           | Takeaway for today                                            | Concrete action in this project                                              |
+|---------------------------------------------|----------------------------------------------------------------|-------------------------------------------------------------------------------|
+| Generative pioneers’ parameter catalogs      | Transparency + repeatability make systems extensible          | Keep all feature/channel formulas in tracked YAML with comments + ranges.    |
+| Calm technology rituals                      | Peripheral experiences need predictable tempo                  | Schedule daily full refresh “breaths” and rate-limit partial updates per zone |
+| Ambient displays favor metaphors over data   | Viewers grasp stories faster than raw metrics                 | Design glyph lexicon (drip, lattice, hatch) tied to semantic channels         |
+| Smart home platform fragmentation            | Minimal glue code between vendors reduces maintenance         | Use HA entity metadata exclusively; no direct device SDK calls               |
+| E-ink ghosting constraints                   | Content must survive static intervals                         | Ensure each layer reads as intentional print even if updates pause minutes   |
+| DIY Waveshare experimentation                | Region-based drivers tolerate ~1–2 Hz per zone                | Partition the canvas and throttle updates per semantic owner                 |
+| ML-era generative art emphasizing trends     | Long-term aggregates add emotional depth                      | Maintain `long_term_drift` + seasonal motifs sourced from historical data     |
+| Tangible Bits’ mapping research              | Physical context grounds abstract systems                     | Annotate configs with `area` metadata and reuse it for spatialized visuals    |
 
 ## Open Questions
 
