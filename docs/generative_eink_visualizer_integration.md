@@ -100,7 +100,7 @@ Pi-hole / Sensors ├─> collector_service → data/raw_state.json
 }
 ```
 
-- Transport-agnostic: file, HTTP, MQTT.
+- Transport-agnostic: file, HTTP, MQTT. See `samples/generative_channels.sample.json` for a ready-to-parse fixture.
 - Include a `schema_version` when the format stabilizes.
 - Renderer treats missing keys as `0.0`.
 

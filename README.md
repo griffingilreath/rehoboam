@@ -37,6 +37,7 @@ mkdir -p data && cp samples/led_config.sample.json data/led_config.json
 - Enable systemd units: See [Running the System](#running-the-system) section below
 - Test LED panel: `python devtools/test_led_panel.py --quick`
 - View dev dashboard: `python -m http.server 8000` then visit `http://localhost:8000/devtools/dashboard/`
+- Preview the generative e-ink visualizer: `python -m visualizers.generative_eink.examples.pi_weight_demo --backend fake` (see [`docs/generative_eink_quickstart.md`](docs/generative_eink_quickstart.md))
 
 ---
 
@@ -450,9 +451,10 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
   ```
 - **Lint + type checks** pair with the suite for local or CI parity:
   ```bash
-  ruff check .
+  python -m ruff check .
   mypy --config-file pyproject.toml jetson
   ```
+- If you install tools with `pip --user`, add `~/.local/bin` to your `PATH` so commands like `ruff` and `mypy` are available without `python -m`.
 - **Visual test runner:** For a more visual local runner, use the included script (adds colors and icons):
   ```bash
   source .venv/bin/activate
@@ -526,6 +528,7 @@ When editing services (or letting Cursor refactor code), keep these data contrac
 - [`docs/generative_eink_visualizer_integration.md`](docs/generative_eink_visualizer_integration.md): Wiring plan covering the HA channel daemon, transport, and Pi renderer
 - [`docs/generative_eink_next_steps.md`](docs/generative_eink_next_steps.md): Phase-by-phase roadmap for delivering the generative visualizer
 - [`docs/it8951_driver_playbook.md`](docs/it8951_driver_playbook.md): Raspberry Pi + IT8951 hardware/driver setup playbook, including tuning tips for Pi 3B+/4
+- `docs/research/*.txt`: plain-text exports of the technical plan PDFs for quick grepping
 - Service-specific READMEs under `jetson/*/`, `display_clients/*/`, and `epaper/` cover configuration, operations, and troubleshooting
 
 ### Rack Hardware & Inspiration
