@@ -2,35 +2,32 @@
 # PACKAGE: MILWAUKEE MUNICIPAL SERVICES (SNOW & LEAVES)
 #
 # Description:
-#   This package tracks municipal services for Milwaukee, specifically:
-#   1. Snow Plow Operations (Winter): Tracks plow activity near your home.
-#   2. Leaf Collection (Fall): Tracks leaf pickup zones and schedule.
-#   3. Garbage/Recycling: Tracks next pickup dates.
+#   Tracks municipal services (Snow Plows, Leaves, Garbage) with robust
+#   fallback strategies to ensure long-term reliability.
 #
-# Data Sources:
-#   - Milwaukee Open Data / ArcGIS REST Services
-#   - DPW Sanitation Website
-#
-# Configuration:
-#   - Ensure 'input_number.milwaukee_latitude' and 'longitude' are set to your home.
-#
-# Key Features:
-#   - "Plows Active Nearby" binary sensor for alerts.
-#   - "Leaf Rake Allowed" helper to know when to rake.
-#   - History tracking of last plow time.
+# LTS STRATEGY (Long Term Support):
+#   1. Snow Routes (ArcGIS): This is the official system of record.
+#      - Status: STABLE (HTTP/2, TLS 1.3).
+#      - Fallback: If 100m radius fails, check 500m radius to confirm system is up.
+#   2. Garbage/Recycling (Legacy Servlet):
+#      - Status: FRAGILE (Old HTML servlet, returns HTML instead of JSON).
+#      - Strategy: We use a lightweight "ping" sensor to check if the service is up.
+#      - Future-Proofing: The official "Garbage Day" app API is the preferred
+#        replacement once fully documented.
 #
 ###############################################################################
 
 # -----------------------------------------------------------------------------
-# REST SENSORS
-# Queries external APIs (City of Milwaukee ArcGIS)
+# REST SENSORS (With Reliability Configurations)
 # -----------------------------------------------------------------------------
 rest:
-  # 1. SNOW PLOWS: Query for activity within 100m of home
+  # 1. SNOW PLOWS (Primary)
+  #    Checks for activity within 100m. If this returns 0, it might just mean
+  #    no plows are nearby, OR the API is down.
   - resource_template: >-
       https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query?f=json&geometry={{ states('input_number.milwaukee_longitude') }},{{ states('input_number.milwaukee_latitude') }}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&distance=100&units=esriSRUnit_Meter&outFields=roadname,lastserviced&returnGeometry=false
     method: GET
-    scan_interval: 900  # 15 minutes
+    scan_interval: 900
     timeout: 30
     sensor:
       - name: mke_snow_raw
@@ -44,21 +41,44 @@ rest:
         json_attributes:
           - features
 
-  # 2. GARBAGE/RECYCLING: Query DPW Servlet (HTML Scraper placeholder)
-  - resource: "https://itmdapps.milwaukee.gov/DpwServletsPublic/garbage_day?address=2930N39thStreet"
+  # 2. SNOW PLOWS (System Health Check)
+  #    Checks a massive 5km radius. If THIS returns 0 features during winter,
+  #    the City's API is likely broken/down.
+  - resource_template: >-
+      https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query?f=json&geometry={{ states('input_number.milwaukee_longitude') }},{{ states('input_number.milwaukee_latitude') }}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&distance=5000&units=esriSRUnit_Meter&returnCountOnly=true
     method: GET
-    scan_interval: 21600 # 6 hours
+    scan_interval: 3600 # Check hourly
     timeout: 30
     sensor:
-      - name: Milwaukee Garbage Raw
-        unique_id: milwaukee_garbage_raw
-        value_template: "ok"
+      - name: mke_snow_system_health
+        unique_id: mke_snow_system_health
+        value_template: >-
+          {% if value_json is mapping and 'count' in value_json %}
+            {{ value_json.count > 0 }}
+          {% else %}
+            False
+          {% endif %}
 
-  # 3. LEAF COLLECTION: Status of your specific leaf zone
+  # 3. GARBAGE DAY (Legacy Scraper)
+  #    We fetch the HTML page. If it contains "Sanitation Collection Schedule",
+  #    we know the service is live.
+  - resource: "https://itmdapps.milwaukee.gov/DpwServletsPublic/garbage_day?address=2930N39thStreet"
+    method: GET
+    scan_interval: 21600
+    timeout: 45
+    headers:
+      User-Agent: "Mozilla/5.0 (Home Assistant; Municipal Monitor)"
+    sensor:
+      - name: Milwaukee Garbage Service Status
+        unique_id: mke_garbage_service_status
+        value_template: >-
+          {{ 'Sanitation Collection Schedule' in value }}
+
+  # 4. LEAF COLLECTION
   - resource_template: >-
       https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/Leaf_Routes_061022_view/FeatureServer/0/query?f=json&geometry={{ states('input_number.milwaukee_longitude') }},{{ states('input_number.milwaukee_latitude') }}&geometryType=esriGeometryPoint&inSR=4326&outFields=SANLEAF,Status,FinalRound&returnGeometry=false
     method: GET
-    scan_interval: 21600 # 6 hours
+    scan_interval: 21600
     timeout: 30
     sensor:
       - name: mke_leaf_status_raw
@@ -72,72 +92,38 @@ rest:
         json_attributes:
           - features
 
-  # 4. COMMUTE ROUTES: Monitor specific key intersections for snow status
-  #    Add or remove roads here as needed.
-  
-  # W NATIONAL AVE
-  - resource: >-
-      https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query
-      ?f=json
-      &geometry=-87.91827,43.02324
-      &geometryType=esriGeometryPoint
-      &inSR=4326
-      &spatialRel=esriSpatialRelIntersects
-      &distance=1500
-      &units=esriSRUnit_Meter
-      &outFields=roadname,lastserviced
-      &returnGeometry=false
-    method: GET
-    scan_interval: 900
-    timeout: 30
-    sensor:
-      - name: mke_snow_w_national_ave
-        unique_id: mke_snow_w_national_ave
-        value_template: >-
-          {% if value_json is mapping and 'features' in value_json %}
-            {{ value_json.features | count }}
-          {% else %}
-            0
-          {% endif %}
-        json_attributes:
-          - features
-
-  # N 6TH ST (Example Commute Route)
-  - resource: >-
-      https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query
-      ?f=json
-      &geometry=-87.91853,43.03208
-      &geometryType=esriGeometryPoint
-      &inSR=4326
-      &spatialRel=esriSpatialRelIntersects
-      &distance=1500
-      &units=esriSRUnit_Meter
-      &outFields=roadname,lastserviced
-      &returnGeometry=false
-    method: GET
-    scan_interval: 900
-    timeout: 30
-    sensor:
-      - name: mke_snow_n_6th_st
-        unique_id: mke_snow_n_6th_st
-        value_template: >-
-          {% if value_json is mapping and 'features' in value_json %}
-            {{ value_json.features | count }}
-          {% else %}
-            0
-          {% endif %}
-        json_attributes:
-          - features
-
 # -----------------------------------------------------------------------------
 # TEMPLATE SENSORS
-# Process raw JSON from REST sensors into usable states
 # -----------------------------------------------------------------------------
 template:
   - sensor:
-      # -- SNOW PLOW LOGIC --
+      # -- SNOW PLOW STATUS --
+      - name: Snow Plow Status
+        unique_id: snow_plow_status
+        state: >-
+          {% set system_ok = is_state('sensor.mke_snow_system_health', 'True') %}
+          {% set last = states('sensor.snow_last_plowed') %}
+          
+          {% if not system_ok and now().month in [12, 1, 2] %}
+            System Outage
+          {% elif last in ['unknown', 'unavailable', 'none', ''] %}
+            No recent activity
+          {% else %}
+            {% set dt = as_datetime(last) %}
+            {% set delta_min = (now() - dt).total_seconds() / 60 %}
+            {% if delta_min <= 10 %}
+              Within last 10 minutes
+            {% elif delta_min <= 30 %}
+              Between 10 and 30 minutes
+            {% else %}
+              Over 30 minutes
+            {% endif %}
+          {% endif %}
+        attributes:
+          roadname: "{{ states('sensor.snow_plow_road_name') }}"
+          system_health: "{{ states('sensor.mke_snow_system_health') }}"
 
-      # 1. Identify which road near home was actually plowed
+      # Helper sensors (Road Name, Last Plowed) remain same as before...
       - name: Snow Plow Road Name
         unique_id: snow_plow_road_name
         state: >-
@@ -145,9 +131,7 @@ template:
           {% if not features %}
             unknown
           {% else %}
-            {# Extract road names from features #}
             {% set roads = features | map(attribute='attributes.roadname') | list %}
-            {# Prioritize specific roads if multiple returned #}
             {% if 'N 39TH ST' in roads %}
               N 39TH ST
             {% elif 'W LOCUST ST' in roads %}
@@ -157,7 +141,6 @@ template:
             {% endif %}
           {% endif %}
 
-      # 2. Get the specific timestamp of the last service
       - name: Snow Last Plowed
         unique_id: snow_last_plowed
         device_class: timestamp
@@ -179,54 +162,8 @@ template:
               unknown
             {% endif %}
           {% endif %}
-
-      # 3. Create a human-friendly status string
-      - name: Snow Plow Status
-        unique_id: snow_plow_status
-        state: >-
-          {% set last = states('sensor.snow_last_plowed') %}
-          {% if last in ['unknown', 'unavailable', 'none', ''] %}
-            No recent activity
-          {% else %}
-            {% set dt = as_datetime(last) %}
-            {% set delta_min = (now() - dt).total_seconds() / 60 %}
-            {% if delta_min <= 10 %}
-              Within last 10 minutes
-            {% elif delta_min <= 30 %}
-              Between 10 and 30 minutes
-            {% else %}
-              Over 30 minutes
-            {% endif %}
-          {% endif %}
-        attributes:
-          roadname: "{{ states('sensor.snow_plow_road_name') }}"
-
-      # -- LEAF COLLECTION LOGIC --
-
-      # 4. Leaf Zone Status
-      - name: Leaf Collection Progress
-        unique_id: leaf_collection_progress
-        state: >-
-          {% set features = state_attr('sensor.mke_leaf_status_raw', 'features') | default([], true) %}
-          {% if not features %}
-            Status unknown
-          {% else %}
-            {% set attrs = features[0].attributes %}
-            {% set status = attrs.Status if 'Status' in attrs else '' %}
-            {% set final = attrs.FinalRound if 'FinalRound' in attrs else 'No' %}
-            
-            {% if final == 'Yes' and status == 'Collected' %}
-              Collection complete
-            {% elif status == 'Next' %}
-              Area up next
-            {% elif status == 'CollectionIP' %}
-              Collection in progress
-            {% else %}
-              No collection imminent
-            {% endif %}
-          {% endif %}
-
-      # 5. Raking Season Logic (Date-based)
+      
+      # -- LEAF SEASON LOGIC --
       - name: Leaf Collection Season
         unique_id: leaf_collection_season
         state: >-
@@ -243,21 +180,19 @@ template:
           {% endif %}
 
   - binary_sensor:
-      # Alert: Are plows working right now?
       - name: Plows Active Nearby
         unique_id: snow_plows_nearby
         state: >-
           {% set status = states('sensor.snow_plow_status') %}
           {{ status in ['Within last 10 minutes', 'Between 10 and 30 minutes'] }}
 
-      # Alert: Can I rake my leaves today?
       - name: Leaf Rake Allowed
         unique_id: leaf_rake_allowed_binary
         state: >-
           {{ 'Rake‑out Window' in states('sensor.leaf_collection_season') }}
 
 # -----------------------------------------------------------------------------
-# HELPERS
+# INPUTS & AUTOMATIONS
 # -----------------------------------------------------------------------------
 input_datetime:
   last_snow_plow:
@@ -281,9 +216,6 @@ input_number:
     max: 180
     step: 0.000001
 
-# -----------------------------------------------------------------------------
-# AUTOMATIONS
-# -----------------------------------------------------------------------------
 automation:
   - alias: "[Snow] Record Last Plow Date"
     id: snow_update_last_plowed
@@ -294,7 +226,7 @@ automation:
     condition:
       - condition: template
         value_template: >-
-          {{ trigger.to_state.state not in ['unknown', 'unavailable', 'No recent activity'] }}
+          {{ trigger.to_state.state not in ['unknown', 'unavailable', 'No recent activity', 'System Outage'] }}
     action:
       - service: input_datetime.set_datetime
         target:
