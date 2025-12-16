@@ -1,9 +1,26 @@
-############################################################
-# Water Usage & Flume Integration Package
-############################################################
+###############################################################################
+# PACKAGE: WATER USAGE & FLUME MONITORING
+# 
+# Description:
+#   This package integrates the Flume water monitor to track water usage, detect
+#   active sessions (showers, sprinklers, leaks), and categorize usage types.
+#   It converts flow rates, calculates costs, and sums usage by category.
+#
+# Components:
+#   - Flume Sensor Integration (via MQTT/Cloud sensors)
+#   - Session Tracking (detects continuous water flow)
+#   - Cost Calculation (USD/gal)
+#   - Utility Meters (Daily/Weekly/Monthly totals)
+#
+# Key Entities to Edit:
+#   - input_number.water_price_usd_per_gal: Set your local water rate.
+#   - input_number.water_min_flow_gpm: Threshold to consider water "ON".
+#
+###############################################################################
 
 homeassistant:
   customize_glob:
+    # Ensure water sensors display correctly in Energy Dashboard and UI
     "sensor.water_*_daily":
       device_class: water
       unit_of_measurement: gal
@@ -25,14 +42,25 @@ homeassistant:
       unit_of_measurement: gal
       state_class: total
 
+# -----------------------------------------------------------------------------
+# INPUT BOOLEANS
+# Toggles for logic behavior
+# -----------------------------------------------------------------------------
 input_boolean:
   water_is_gph:
     name: Water sensor is GPH (convert to GPM)
+    icon: mdi:water-pump
     initial: false
 
+# -----------------------------------------------------------------------------
+# INPUT NUMBERS
+# User-adjustable settings and persistent storage for totals
+# -----------------------------------------------------------------------------
 input_number:
+  # -- Settings --
   water_price_usd_per_gal:
-    name: Water price
+    name: Water Price
+    icon: mdi:currency-usd
     min: 0
     max: 5
     step: 0.0001
@@ -41,7 +69,8 @@ input_number:
     initial: 0.0123
 
   water_min_flow_gpm:
-    name: Water min flow (GPM)
+    name: Min Flow Threshold (Start Session)
+    icon: mdi:filter-menu
     min: 0
     max: 5
     step: 0.01
@@ -49,92 +78,99 @@ input_number:
     initial: 0.10
 
   water_session_gap_seconds:
-    name: Water session gap (s)
+    name: Session Gap Tolerance
+    description: "Seconds of zero flow allowed before ending a session"
     min: 10
     max: 600
     step: 5
     unit_of_measurement: s
     initial: 60
 
+  # -- Live Session Data (Do not edit manually) --
   water_session_volume_gal:
-    name: Water session volume (gal)
+    name: Current Session Volume
     min: 0
     max: 5000
     step: 0.001
     unit_of_measurement: gal
 
   water_session_runtime_min:
-    name: Water session runtime (min)
+    name: Current Session Duration
     min: 0
     max: 2000
     step: 0.01
     unit_of_measurement: min
 
+  # -- Last Session Snapshot (For display/history) --
   water_last_session_volume_gal:
-    name: Water last session volume (gal)
+    name: Last Session Volume
     min: 0
     max: 5000
     step: 0.001
     unit_of_measurement: gal
 
   water_last_session_duration_min:
-    name: Water last session duration (min)
+    name: Last Session Duration
     min: 0
     max: 2000
     step: 0.01
     unit_of_measurement: min
 
   water_last_session_avg_flow_gpm:
-    name: Water last session avg flow (GPM)
+    name: Last Session Avg Flow
     min: 0
     max: 20
     step: 0.001
     unit_of_measurement: "gal/min"
 
-  # Category running totals
+  # -- Category Cumulative Totals (All Time) --
   water_total_shower_gal:
-    name: "Water – Shower (cum)"
+    name: "Total: Shower"
     min: 0
-    max: 100000
+    max: 1000000
     step: 0.1
     unit_of_measurement: gal
   water_total_toilet_gal:
-    name: "Water – Toilet (cum)"
+    name: "Total: Toilet"
     min: 0
-    max: 100000
+    max: 1000000
     step: 0.1
     unit_of_measurement: gal
   water_total_sink_gal:
-    name: "Water – Sink (cum)"
+    name: "Total: Sink"
     min: 0
-    max: 100000
+    max: 1000000
     step: 0.1
     unit_of_measurement: gal
   water_total_dishwasher_gal:
-    name: "Water – Dishwasher (cum)"
+    name: "Total: Dishwasher"
     min: 0
-    max: 100000
+    max: 1000000
     step: 0.1
     unit_of_measurement: gal
   water_total_washer_gal:
-    name: "Water – Washer (cum)"
+    name: "Total: Washer"
     min: 0
-    max: 100000
+    max: 1000000
     step: 0.1
     unit_of_measurement: gal
   water_total_outdoor_gal:
-    name: "Water – Outdoor (cum)"
+    name: "Total: Outdoor"
     min: 0
-    max: 100000
+    max: 1000000
     step: 0.1
     unit_of_measurement: gal
   water_total_other_gal:
-    name: "Water – Other (cum)"
+    name: "Total: Other"
     min: 0
-    max: 100000
+    max: 1000000
     step: 0.1
     unit_of_measurement: gal
 
+# -----------------------------------------------------------------------------
+# INPUT DATETIMES
+# Timestamps for logic tracking
+# -----------------------------------------------------------------------------
 input_datetime:
   water_session_last_tick:
     name: Water session last tick
@@ -145,13 +181,20 @@ input_datetime:
     has_date: true
     has_time: true
 
+# -----------------------------------------------------------------------------
+# SENSORS & BINARY SENSORS (TEMPLATE)
+# Derived data from raw inputs
+# -----------------------------------------------------------------------------
 template:
   - sensor:
+      # Expose Price as a sensor for Energy Dashboard
       - name: "Water price (USD/gal)"
         unique_id: water_price_usd_per_gal_sensor
         unit_of_measurement: "USD/gal"
         state: "{{ states('input_number.water_price_usd_per_gal') | float(0) }}"
 
+      # Normalized Flow Rate (GPM)
+      # Handles GPH -> GPM conversion if needed
       - name: "Water Flow (GPM)"
         unique_id: water_flow_gpm
         unit_of_measurement: "gal/min"
@@ -165,7 +208,7 @@ template:
             {{ raw | round(3) }}
           {% endif %}
 
-      # Per-session sensors
+      # -- Live Session Metrics --
       - name: "Water Session Volume Gal"
         unique_id: water_session_volume_gal_live
         unit_of_measurement: "gal"
@@ -188,6 +231,7 @@ template:
           {% set dur = states('input_number.water_session_runtime_min')|float(0) %}
           {{ (vol / dur) | round(3) if dur > 0 else 0 }}
 
+      # -- Last Session Metrics (Snapshot) --
       - name: "water_monitor_last_session_volume_gal"
         unit_of_measurement: "gal"
         state_class: measurement
@@ -198,13 +242,7 @@ template:
         state_class: measurement
         state: "{{ states('input_number.water_last_session_duration_min')|float(0) | round(2) }}"
 
-      - name: "water_monitor_last_session_avg_flow_gpm"
-        unit_of_measurement: "gal/min"
-        device_class: volume_flow_rate
-        state_class: measurement
-        state: "{{ states('input_number.water_last_session_avg_flow_gpm')|float(0) | round(3) }}"
-
-      # Flume Yesterday Sensors
+      # -- Flume Yesterday Data --
       - name: Flume yesterday last update
         unique_id: flume_yesterday_last_update
         state: >
@@ -215,20 +253,17 @@ template:
             unknown
           {% endif %}
 
-      - name: Flume yesterday date
-        unique_id: flume_yesterday_date
-        state: >
-          {{ (now().date() - timedelta(days=1)).strftime('%A, %b %-d, %Y') }}
-
   - binary_sensor:
       - name: "water_monitor_in_session"
         state: "{{ is_state('binary_sensor.water_in_session','on') }}"
+
       - name: Flume yesterday updated today
         unique_id: flume_yesterday_updated_today
         state: >
           {% set e = states.get('sensor.flume_portal_categories_water_total_yesterday') %}
           {{ e is not none and now().date() == e.last_changed.date() }}
 
+# High-Level Binary Sensor: Is water flowing?
 binary_sensor:
   - platform: template
     sensors:
@@ -237,28 +272,41 @@ binary_sensor:
         value_template: >-
           {{ states('sensor.water_flow_gpm')|float(0) >= states('input_number.water_min_flow_gpm')|float(0.1) }}
 
+# -----------------------------------------------------------------------------
+# TIMER
+# Handles the "gap" where water stops briefly (e.g. soaping up in shower)
+# -----------------------------------------------------------------------------
 timer:
   water_gap_timer:
     duration: "00:01:00"
 
+# -----------------------------------------------------------------------------
+# UTILITY METERS
+# Tracks usage over time intervals (Daily, Weekly, Monthly)
+# -----------------------------------------------------------------------------
 utility_meter:
-  water_shower_daily:   { source: input_number.water_total_shower_gal,   cycle: daily,   name: "Water – Shower (daily)" }
-  water_shower_weekly:  { source: input_number.water_total_shower_gal,   cycle: weekly,  name: "Water – Shower (weekly)" }
-  water_shower_monthly: { source: input_number.water_total_shower_gal,   cycle: monthly, name: "Water – Shower (monthly)" }
+  water_shower_daily:   { source: input_number.water_total_shower_gal,   cycle: daily,   name: "Shower Usage (Day)" }
+  water_shower_weekly:  { source: input_number.water_total_shower_gal,   cycle: weekly,  name: "Shower Usage (Week)" }
+  water_shower_monthly: { source: input_number.water_total_shower_gal,   cycle: monthly, name: "Shower Usage (Month)" }
 
-  water_toilet_daily:   { source: input_number.water_total_toilet_gal,   cycle: daily,   name: "Water – Toilet (daily)" }
-  water_toilet_weekly:  { source: input_number.water_total_toilet_gal,   cycle: weekly,  name: "Water – Toilet (weekly)" }
-  water_toilet_monthly: { source: input_number.water_total_toilet_gal,   cycle: monthly, name: "Water – Toilet (monthly)" }
+  water_toilet_daily:   { source: input_number.water_total_toilet_gal,   cycle: daily,   name: "Toilet Usage (Day)" }
+  water_toilet_weekly:  { source: input_number.water_total_toilet_gal,   cycle: weekly,  name: "Toilet Usage (Week)" }
+  water_toilet_monthly: { source: input_number.water_total_toilet_gal,   cycle: monthly, name: "Toilet Usage (Month)" }
 
-  water_sink_daily:     { source: input_number.water_total_sink_gal,     cycle: daily,   name: "Water – Sink (daily)" }
-  water_dish_daily:     { source: input_number.water_total_dishwasher_gal, cycle: daily, name: "Water – Dishwasher (daily)" }
-  water_washer_daily:   { source: input_number.water_total_washer_gal,   cycle: daily,   name: "Water – Washer (daily)" }
-  water_outdoor_daily:  { source: input_number.water_total_outdoor_gal,  cycle: daily,   name: "Water – Outdoor (daily)" }
-  water_other_daily:    { source: input_number.water_total_other_gal,    cycle: daily,   name: "Water – Other (daily)" }
+  water_sink_daily:     { source: input_number.water_total_sink_gal,     cycle: daily,   name: "Sink Usage (Day)" }
+  water_dish_daily:     { source: input_number.water_total_dishwasher_gal, cycle: daily, name: "Dishwasher Usage (Day)" }
+  water_washer_daily:   { source: input_number.water_total_washer_gal,   cycle: daily,   name: "Washing Machine Usage (Day)" }
+  water_outdoor_daily:  { source: input_number.water_total_outdoor_gal,  cycle: daily,   name: "Outdoor Usage (Day)" }
+  water_other_daily:    { source: input_number.water_total_other_gal,    cycle: daily,   name: "Other Usage (Day)" }
 
+# -----------------------------------------------------------------------------
+# AUTOMATIONS
+# Core logic for tracking sessions and categorization
+# -----------------------------------------------------------------------------
 automation:
+  # 1. Start Session: Reset counters when water starts flowing
   - id: water_session_start_reset
-    alias: "[Water] Session start → reset counters"
+    alias: "[Water] Session Start -> Reset"
     mode: restart
     trigger:
       - platform: state
@@ -279,8 +327,9 @@ automation:
         data:
           datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
+  # 2. Accumulate: Add volume every 5 seconds while flowing
   - id: water_session_accumulate
-    alias: "[Water] Accumulate session volume/runtime"
+    alias: "[Water] Accumulate Volume"
     mode: single
     trigger:
       - platform: time_pattern
@@ -317,8 +366,9 @@ automation:
         data:
           datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
+  # 3. Gap Timer: Handle brief pauses in flow
   - id: water_gap_timer_control
-    alias: "[Water] Maintain gap timer during sessions"
+    alias: "[Water] Manage Gap Timer"
     mode: restart
     trigger:
       - platform: state
@@ -344,8 +394,9 @@ automation:
                   entity_id: timer.water_gap_timer
                   duration: "{{ '00:%02d:%02d'|format((gap//60)%60, gap%60) }}"
 
+  # 4. Finalize: Session ended (gap timer finished)
   - id: water_session_finalize
-    alias: "[Water] Finalize session after gap"
+    alias: "[Water] Finalize Session"
     mode: queued
     trigger:
       - platform: event
@@ -358,6 +409,7 @@ automation:
       avg: "{{ (vol / dur_min) | float(0) if dur_min > 0 else 0 }}"
     action:
       - choose:
+          # Only record significant sessions (>0.02 gal)
           - conditions: "{{ vol > 0.02 and dur_min > 0.05 }}"
             sequence:
               - service: input_number.set_value
@@ -373,11 +425,13 @@ automation:
                 target: { entity_id: input_datetime.water_last_session_end }
                 data:
                   datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+              # Fire event for categorization
               - event: water_monitor_session_ended
                 event_data:
                   volume_gal: "{{ vol }}"
                   duration_min: "{{ dur_min }}"
                   avg_flow_gpm: "{{ avg }}"
+      # Reset live counters
       - service: input_number.set_value
         target: { entity_id: input_number.water_session_volume_gal }
         data: { value: 0 }
@@ -389,8 +443,9 @@ automation:
         data:
           datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
+  # 5. Categorize: Guess what used the water based on Flow + Duration profiles
   - id: water_session_categorize_and_sum
-    alias: "[Water] Categorize last session and add gallons"
+    alias: "[Water] Categorize Usage"
     mode: queued
     trigger:
       - platform: event
@@ -401,42 +456,49 @@ automation:
       avg: "{{ trigger.event.data.avg_flow_gpm|float(0) }}"
     action:
       - choose:
+          # Toilet: Short duration, moderate volume (1-3 gal)
           - conditions: "{{ 1.0 <= vol <= 3.2 and dur_min <= 2.5 and 0.4 <= avg <= 2.2 }}"
             sequence:
               - service: input_number.set_value
                 target: { entity_id: input_number.water_total_toilet_gal }
                 data: { value: "{{ states('input_number.water_total_toilet_gal')|float(0) + vol }}" }
 
+          # Shower: Longer duration (>4.5 min), moderate flow
           - conditions: "{{ dur_min >= 4.5 and 1.0 <= avg <= 3.2 and vol >= 5 }}"
             sequence:
               - service: input_number.set_value
                 target: { entity_id: input_number.water_total_shower_gal }
                 data: { value: "{{ states('input_number.water_total_shower_gal')|float(0) + vol }}" }
 
+          # Dishwasher: Very long (50-150 min), low avg flow (sips water)
           - conditions: "{{ 50 <= dur_min <= 150 and 0.2 <= avg <= 1.2 and vol >= 3 }}"
             sequence:
               - service: input_number.set_value
                 target: { entity_id: input_number.water_total_dishwasher_gal }
                 data: { value: "{{ states('input_number.water_total_dishwasher_gal')|float(0) + vol }}" }
 
+          # Washing Machine: Medium duration (18-70 min), high variance flow
           - conditions: "{{ 18 <= dur_min <= 70 and 0.8 <= avg <= 2.6 and vol >= 5 }}"
             sequence:
               - service: input_number.set_value
                 target: { entity_id: input_number.water_total_washer_gal }
                 data: { value: "{{ states('input_number.water_total_washer_gal')|float(0) + vol }}" }
 
+          # Outdoor: High flow, any duration OR long duration high flow
           - conditions: "{{ dur_min >= 2 and avg >= 2.0 and not (dur_min >= 4.5 and avg <= 3.2) }}"
             sequence:
               - service: input_number.set_value
                 target: { entity_id: input_number.water_total_outdoor_gal }
                 data: { value: "{{ states('input_number.water_total_outdoor_gal')|float(0) + vol }}" }
 
+          # Sink: Short duration, low volume, low flow
           - conditions: "{{ 0.4 <= dur_min <= 6 and 0.2 <= avg <= 1.2 and vol <= 3.5 }}"
             sequence:
               - service: input_number.set_value
                 target: { entity_id: input_number.water_total_sink_gal }
                 data: { value: "{{ states('input_number.water_total_sink_gal')|float(0) + vol }}" }
 
+        # Default catch-all
         default:
           - service: input_number.set_value
             target: { entity_id: input_number.water_total_other_gal }
