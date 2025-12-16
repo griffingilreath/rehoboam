@@ -1,0 +1,443 @@
+############################################################
+# Water Usage & Flume Integration Package
+############################################################
+
+homeassistant:
+  customize_glob:
+    "sensor.water_*_daily":
+      device_class: water
+      unit_of_measurement: gal
+      state_class: total
+    "sensor.water_*_weekly":
+      device_class: water
+      unit_of_measurement: gal
+      state_class: total
+    "sensor.water_*_monthly":
+      device_class: water
+      unit_of_measurement: gal
+      state_class: total
+    "sensor.flume_portal_categories_water_*_yesterday":
+      device_class: water
+      unit_of_measurement: gal
+      state_class: total
+    "sensor.flume_portal_categories_water_*_today":
+      device_class: water
+      unit_of_measurement: gal
+      state_class: total
+
+input_boolean:
+  water_is_gph:
+    name: Water sensor is GPH (convert to GPM)
+    initial: false
+
+input_number:
+  water_price_usd_per_gal:
+    name: Water price
+    min: 0
+    max: 5
+    step: 0.0001
+    mode: box
+    unit_of_measurement: "USD/gal"
+    initial: 0.0123
+
+  water_min_flow_gpm:
+    name: Water min flow (GPM)
+    min: 0
+    max: 5
+    step: 0.01
+    unit_of_measurement: "gal/min"
+    initial: 0.10
+
+  water_session_gap_seconds:
+    name: Water session gap (s)
+    min: 10
+    max: 600
+    step: 5
+    unit_of_measurement: s
+    initial: 60
+
+  water_session_volume_gal:
+    name: Water session volume (gal)
+    min: 0
+    max: 5000
+    step: 0.001
+    unit_of_measurement: gal
+
+  water_session_runtime_min:
+    name: Water session runtime (min)
+    min: 0
+    max: 2000
+    step: 0.01
+    unit_of_measurement: min
+
+  water_last_session_volume_gal:
+    name: Water last session volume (gal)
+    min: 0
+    max: 5000
+    step: 0.001
+    unit_of_measurement: gal
+
+  water_last_session_duration_min:
+    name: Water last session duration (min)
+    min: 0
+    max: 2000
+    step: 0.01
+    unit_of_measurement: min
+
+  water_last_session_avg_flow_gpm:
+    name: Water last session avg flow (GPM)
+    min: 0
+    max: 20
+    step: 0.001
+    unit_of_measurement: "gal/min"
+
+  # Category running totals
+  water_total_shower_gal:
+    name: "Water – Shower (cum)"
+    min: 0
+    max: 100000
+    step: 0.1
+    unit_of_measurement: gal
+  water_total_toilet_gal:
+    name: "Water – Toilet (cum)"
+    min: 0
+    max: 100000
+    step: 0.1
+    unit_of_measurement: gal
+  water_total_sink_gal:
+    name: "Water – Sink (cum)"
+    min: 0
+    max: 100000
+    step: 0.1
+    unit_of_measurement: gal
+  water_total_dishwasher_gal:
+    name: "Water – Dishwasher (cum)"
+    min: 0
+    max: 100000
+    step: 0.1
+    unit_of_measurement: gal
+  water_total_washer_gal:
+    name: "Water – Washer (cum)"
+    min: 0
+    max: 100000
+    step: 0.1
+    unit_of_measurement: gal
+  water_total_outdoor_gal:
+    name: "Water – Outdoor (cum)"
+    min: 0
+    max: 100000
+    step: 0.1
+    unit_of_measurement: gal
+  water_total_other_gal:
+    name: "Water – Other (cum)"
+    min: 0
+    max: 100000
+    step: 0.1
+    unit_of_measurement: gal
+
+input_datetime:
+  water_session_last_tick:
+    name: Water session last tick
+    has_date: true
+    has_time: true
+  water_last_session_end:
+    name: Water last session ended
+    has_date: true
+    has_time: true
+
+template:
+  - sensor:
+      - name: "Water price (USD/gal)"
+        unique_id: water_price_usd_per_gal_sensor
+        unit_of_measurement: "USD/gal"
+        state: "{{ states('input_number.water_price_usd_per_gal') | float(0) }}"
+
+      - name: "Water Flow (GPM)"
+        unique_id: water_flow_gpm
+        unit_of_measurement: "gal/min"
+        state_class: measurement
+        device_class: volume_flow_rate
+        state: >-
+          {% set raw = states('sensor.flume_sensor_sherman_park_current')|float(0) %}
+          {% if is_state('input_boolean.water_is_gph','on') %}
+            {{ (raw / 60) | round(3) }}
+          {% else %}
+            {{ raw | round(3) }}
+          {% endif %}
+
+      # Per-session sensors
+      - name: "Water Session Volume Gal"
+        unique_id: water_session_volume_gal_live
+        unit_of_measurement: "gal"
+        state_class: measurement
+        state: "{{ states('input_number.water_session_volume_gal')|float(0) | round(3) }}"
+
+      - name: "Water Session Runtime"
+        unique_id: water_session_runtime_min_live
+        unit_of_measurement: "min"
+        state_class: measurement
+        state: "{{ states('input_number.water_session_runtime_min')|float(0) | round(2) }}"
+
+      - name: "Water Session Avg Flow GPM"
+        unique_id: water_session_avg_flow_gpm_live
+        unit_of_measurement: "gal/min"
+        device_class: volume_flow_rate
+        state_class: measurement
+        state: >-
+          {% set vol = states('input_number.water_session_volume_gal')|float(0) %}
+          {% set dur = states('input_number.water_session_runtime_min')|float(0) %}
+          {{ (vol / dur) | round(3) if dur > 0 else 0 }}
+
+      - name: "water_monitor_last_session_volume_gal"
+        unit_of_measurement: "gal"
+        state_class: measurement
+        state: "{{ states('input_number.water_last_session_volume_gal')|float(0) | round(3) }}"
+
+      - name: "water_monitor_last_session_duration_min"
+        unit_of_measurement: "min"
+        state_class: measurement
+        state: "{{ states('input_number.water_last_session_duration_min')|float(0) | round(2) }}"
+
+      - name: "water_monitor_last_session_avg_flow_gpm"
+        unit_of_measurement: "gal/min"
+        device_class: volume_flow_rate
+        state_class: measurement
+        state: "{{ states('input_number.water_last_session_avg_flow_gpm')|float(0) | round(3) }}"
+
+      # Flume Yesterday Sensors
+      - name: Flume yesterday last update
+        unique_id: flume_yesterday_last_update
+        state: >
+          {% set e = states.get('sensor.flume_portal_categories_water_total_yesterday') %}
+          {% if e is not none %}
+            {{ e.last_changed.astimezone().strftime('%Y-%m-%d %I:%M %p') }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      - name: Flume yesterday date
+        unique_id: flume_yesterday_date
+        state: >
+          {{ (now().date() - timedelta(days=1)).strftime('%A, %b %-d, %Y') }}
+
+  - binary_sensor:
+      - name: "water_monitor_in_session"
+        state: "{{ is_state('binary_sensor.water_in_session','on') }}"
+      - name: Flume yesterday updated today
+        unique_id: flume_yesterday_updated_today
+        state: >
+          {% set e = states.get('sensor.flume_portal_categories_water_total_yesterday') %}
+          {{ e is not none and now().date() == e.last_changed.date() }}
+
+binary_sensor:
+  - platform: template
+    sensors:
+      water_in_session:
+        friendly_name: "Water in session"
+        value_template: >-
+          {{ states('sensor.water_flow_gpm')|float(0) >= states('input_number.water_min_flow_gpm')|float(0.1) }}
+
+timer:
+  water_gap_timer:
+    duration: "00:01:00"
+
+utility_meter:
+  water_shower_daily:   { source: input_number.water_total_shower_gal,   cycle: daily,   name: "Water – Shower (daily)" }
+  water_shower_weekly:  { source: input_number.water_total_shower_gal,   cycle: weekly,  name: "Water – Shower (weekly)" }
+  water_shower_monthly: { source: input_number.water_total_shower_gal,   cycle: monthly, name: "Water – Shower (monthly)" }
+
+  water_toilet_daily:   { source: input_number.water_total_toilet_gal,   cycle: daily,   name: "Water – Toilet (daily)" }
+  water_toilet_weekly:  { source: input_number.water_total_toilet_gal,   cycle: weekly,  name: "Water – Toilet (weekly)" }
+  water_toilet_monthly: { source: input_number.water_total_toilet_gal,   cycle: monthly, name: "Water – Toilet (monthly)" }
+
+  water_sink_daily:     { source: input_number.water_total_sink_gal,     cycle: daily,   name: "Water – Sink (daily)" }
+  water_dish_daily:     { source: input_number.water_total_dishwasher_gal, cycle: daily, name: "Water – Dishwasher (daily)" }
+  water_washer_daily:   { source: input_number.water_total_washer_gal,   cycle: daily,   name: "Water – Washer (daily)" }
+  water_outdoor_daily:  { source: input_number.water_total_outdoor_gal,  cycle: daily,   name: "Water – Outdoor (daily)" }
+  water_other_daily:    { source: input_number.water_total_other_gal,    cycle: daily,   name: "Water – Other (daily)" }
+
+automation:
+  - id: water_session_start_reset
+    alias: "[Water] Session start → reset counters"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_in_session
+        from: "off"
+        to: "on"
+    action:
+      - service: timer.cancel
+        target: { entity_id: timer.water_gap_timer }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data: { value: 0 }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data: { value: 0 }
+      - service: input_datetime.set_datetime
+        target: { entity_id: input_datetime.water_session_last_tick }
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  - id: water_session_accumulate
+    alias: "[Water] Accumulate session volume/runtime"
+    mode: single
+    trigger:
+      - platform: time_pattern
+        seconds: "/5"
+    condition:
+      - condition: state
+        entity_id: binary_sensor.water_in_session
+        state: "on"
+    variables:
+      flow_gpm: "{{ states('sensor.water_flow_gpm')|float(0) }}"
+      last_str: "{{ states('input_datetime.water_session_last_tick') }}"
+      now_ts: "{{ as_timestamp(now()) }}"
+      last_ts: >-
+        {% if last_str in ['unknown','unavailable',''] %}
+          {{ now_ts }}
+        {% else %}
+          {{ as_timestamp(as_datetime(last_str)) }}
+        {% endif %}
+      dt_raw: "{{ now_ts - last_ts }}"
+      dt_sec: "{{ [ [dt_raw, 0] | max, 60 ] | min }}"
+      add_gal: "{{ (flow_gpm * (dt_sec/60)) | float(0) }}"
+      add_min: "{{ (dt_sec/60) | float(0) }}"
+    action:
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data:
+          value: "{{ (states('input_number.water_session_volume_gal')|float(0) + add_gal) | round(3) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data:
+          value: "{{ (states('input_number.water_session_runtime_min')|float(0) + add_min) | round(2) }}"
+      - service: input_datetime.set_datetime
+        target: { entity_id: input_datetime.water_session_last_tick }
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  - id: water_gap_timer_control
+    alias: "[Water] Maintain gap timer during sessions"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_in_session
+        from: "off"
+        to: "on"
+      - platform: state
+        entity_id: binary_sensor.water_in_session
+        from: "on"
+        to: "off"
+    variables:
+      gap: "{{ states('input_number.water_session_gap_seconds')|int(60) }}"
+    action:
+      - choose:
+          - conditions: "{{ is_state('binary_sensor.water_in_session','on') }}"
+            sequence:
+              - service: timer.cancel
+                target: { entity_id: timer.water_gap_timer }
+          - conditions: "{{ is_state('binary_sensor.water_in_session','off') }}"
+            sequence:
+              - service: timer.start
+                data:
+                  entity_id: timer.water_gap_timer
+                  duration: "{{ '00:%02d:%02d'|format((gap//60)%60, gap%60) }}"
+
+  - id: water_session_finalize
+    alias: "[Water] Finalize session after gap"
+    mode: queued
+    trigger:
+      - platform: event
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.water_gap_timer
+    variables:
+      vol: "{{ states('input_number.water_session_volume_gal')|float(0) }}"
+      dur_min: "{{ states('input_number.water_session_runtime_min')|float(0) }}"
+      avg: "{{ (vol / dur_min) | float(0) if dur_min > 0 else 0 }}"
+    action:
+      - choose:
+          - conditions: "{{ vol > 0.02 and dur_min > 0.05 }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_volume_gal }
+                data: { value: "{{ vol | round(3) }}" }
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_duration_min }
+                data: { value: "{{ dur_min | round(2) }}" }
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_avg_flow_gpm }
+                data: { value: "{{ avg | round(3) }}" }
+              - service: input_datetime.set_datetime
+                target: { entity_id: input_datetime.water_last_session_end }
+                data:
+                  datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+              - event: water_monitor_session_ended
+                event_data:
+                  volume_gal: "{{ vol }}"
+                  duration_min: "{{ dur_min }}"
+                  avg_flow_gpm: "{{ avg }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data: { value: 0 }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data: { value: 0 }
+      - service: input_datetime.set_datetime
+        target: { entity_id: input_datetime.water_session_last_tick }
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  - id: water_session_categorize_and_sum
+    alias: "[Water] Categorize last session and add gallons"
+    mode: queued
+    trigger:
+      - platform: event
+        event_type: water_monitor_session_ended
+    variables:
+      vol: "{{ trigger.event.data.volume_gal|float(0) }}"
+      dur_min: "{{ trigger.event.data.duration_min|float(0) }}"
+      avg: "{{ trigger.event.data.avg_flow_gpm|float(0) }}"
+    action:
+      - choose:
+          - conditions: "{{ 1.0 <= vol <= 3.2 and dur_min <= 2.5 and 0.4 <= avg <= 2.2 }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_total_toilet_gal }
+                data: { value: "{{ states('input_number.water_total_toilet_gal')|float(0) + vol }}" }
+
+          - conditions: "{{ dur_min >= 4.5 and 1.0 <= avg <= 3.2 and vol >= 5 }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_total_shower_gal }
+                data: { value: "{{ states('input_number.water_total_shower_gal')|float(0) + vol }}" }
+
+          - conditions: "{{ 50 <= dur_min <= 150 and 0.2 <= avg <= 1.2 and vol >= 3 }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_total_dishwasher_gal }
+                data: { value: "{{ states('input_number.water_total_dishwasher_gal')|float(0) + vol }}" }
+
+          - conditions: "{{ 18 <= dur_min <= 70 and 0.8 <= avg <= 2.6 and vol >= 5 }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_total_washer_gal }
+                data: { value: "{{ states('input_number.water_total_washer_gal')|float(0) + vol }}" }
+
+          - conditions: "{{ dur_min >= 2 and avg >= 2.0 and not (dur_min >= 4.5 and avg <= 3.2) }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_total_outdoor_gal }
+                data: { value: "{{ states('input_number.water_total_outdoor_gal')|float(0) + vol }}" }
+
+          - conditions: "{{ 0.4 <= dur_min <= 6 and 0.2 <= avg <= 1.2 and vol <= 3.5 }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_total_sink_gal }
+                data: { value: "{{ states('input_number.water_total_sink_gal')|float(0) + vol }}" }
+
+        default:
+          - service: input_number.set_value
+            target: { entity_id: input_number.water_total_other_gal }
+            data: { value: "{{ states('input_number.water_total_other_gal')|float(0) + vol }}" }
