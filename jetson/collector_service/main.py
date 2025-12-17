@@ -25,12 +25,17 @@ from jetson.common.json_store import atomic_write_json, load_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.config import expand_env_placeholders
+from jetson.common.http import create_retry_session
+from jetson.common.utils import wait_for_next_cycle
 
 DEFAULT_CONFIG_PATH = "jetson/collector_service/config.yaml"
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_EVENTS_LOG_FILENAME = "events.json"
 RAW_STATE_SCHEMA_VERSION = "1.0"
+EVENTS_SCHEMA_VERSION = "1.0"
+
+
 class EventLogWriter:
     """Persist recent detailed events for dashboards/e-paper scenes."""
 
@@ -43,10 +48,10 @@ class EventLogWriter:
         if not events:
             return
         with self._lock:
-            existing_payload = load_json(self._path, {"events": []})
+            existing_payload = load_json(self._path, {"events": [], "schema_version": EVENTS_SCHEMA_VERSION})
             existing = existing_payload.get("events", []) if isinstance(existing_payload, dict) else []
             merged = (existing + events)[-self._max_entries :]
-            payload = {"events": merged}
+            payload = {"schema_version": EVENTS_SCHEMA_VERSION, "events": merged}
             atomic_write_json(self._path, payload)
 
 
@@ -208,7 +213,7 @@ def _derive_summary(
 class HomeAssistantRestClient:
     def __init__(self, config: HomeAssistantConfig) -> None:
         self._config = config
-        self._session = requests.Session()
+        self._session = create_retry_session(timeout=config.timeout_seconds)
         self._session.headers.update({
             "Authorization": f"Bearer {config.token}",
             "Content-Type": "application/json",
@@ -253,7 +258,7 @@ class PiHoleClient:
         self._api_path = config.api_path or "/admin/api.php"
         self._token = config.token
         self._timeout = config.timeout_seconds
-        self._session = requests.Session()
+        self._session = create_retry_session(timeout=config.timeout_seconds)
 
     def summary(self) -> Optional[Dict[str, Any]]:
         if not self._enabled:
@@ -438,15 +443,12 @@ class CollectorService:
             started = time.monotonic()
             try:
                 self.collect_once()
-            except Exception:
+            except Exception as exc:
                 logging.exception("Collector cycle failed")
-                self._health.mark_error(self._identity, "collector cycle failed")
+                self._health.mark_error(self._identity, f"collector cycle failed: {exc}")
             if run_once:
                 break
-            elapsed = time.monotonic() - started
-            sleep_for = max(0.0, self._config.poll_interval_seconds - elapsed)
-            if sleep_for > 0:
-                time.sleep(sleep_for)
+            wait_for_next_cycle(started, self._config.poll_interval_seconds)
 
     def collect_once(self) -> None:
         led_config = self._load_led_config()

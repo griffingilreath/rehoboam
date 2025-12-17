@@ -18,6 +18,7 @@ import yaml
 from jetson.common.json_store import atomic_write_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
+from jetson.common.utils import wait_for_next_cycle
 
 
 DEFAULT_CONFIG_PATH = "jetson/ml_service/config.yaml"
@@ -180,15 +181,12 @@ class MlService:
             start = time.monotonic()
             try:
                 self.process_once()
-            except Exception:
+            except Exception as exc:
                 logging.exception("ML cycle failed")
-                self._health.mark_error(self._identity, "ml cycle failed")
+                self._health.mark_error(self._identity, f"ml cycle failed: {exc}")
             if run_once:
                 break
-            elapsed = time.monotonic() - start
-            sleep_for = max(0.0, self._config.poll_interval_seconds - elapsed)
-            if sleep_for > 0:
-                time.sleep(sleep_for)
+            wait_for_next_cycle(start, self._config.poll_interval_seconds)
 
     def process_once(self) -> None:
         history = self._load_history()
