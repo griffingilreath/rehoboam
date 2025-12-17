@@ -100,15 +100,15 @@ class CognitionService:
         self._stop_requested = True
 
     def run(self, run_once: bool = False) -> None:
-        self._health.mark_running(self._identity)
+        self._health.mark_startup(self._identity)
         while not self._stop_requested:
             started = time.monotonic()
             try:
-                self.process_once()
-                self._health.mark_running(self._identity)
-            except Exception:
+                details = self.process_once()
+                self._health.update(self._identity, "running", details)
+            except Exception as exc:
                 logging.exception("cognition cycle failed")
-                self._health.mark_error(self._identity, "cognition cycle failed")
+                self._health.mark_error(self._identity, f"cognition cycle failed: {exc}")
             if run_once:
                 break
             elapsed = time.monotonic() - started
@@ -116,20 +116,27 @@ class CognitionService:
             if sleep_for > 0:
                 time.sleep(sleep_for)
 
-    def process_once(self) -> None:
+    def process_once(self) -> Dict[str, Any]:
         source = {"kind": "external_orchestrator", "base_url": self._config.orchestrator.base_url, "status": "ok"}
         agents: List[Dict[str, Any]] = []
         decisions: List[Dict[str, Any]] = []
         approvals: List[Dict[str, Any]] = []
+        details: Dict[str, Any] = {
+            "orchestrator_base_url": self._config.orchestrator.base_url,
+            "suggestions_enabled": self._config.suggestions.enabled,
+            "suggestions_mode": self._config.suggestions.mode,
+        }
 
         try:
             agents = self._get_json("/api/agents") or []
             decisions = self._get_json("/api/decisions?limit=50") or []
             # Keep status=pending by default; if the orchestrator ignores it, we still normalize.
             approvals = self._get_json("/api/approvals?status=pending") or []
+            details["orchestrator_status"] = "ok"
         except Exception as exc:
             source["status"] = f"error: {exc}"
             logging.warning("Failed to fetch cognition from orchestrator: %s", exc)
+            details["orchestrator_status"] = f"error: {exc}"
 
         cognition_payload = {
             "schema_version": COGNITION_SCHEMA_VERSION,
@@ -141,9 +148,16 @@ class CognitionService:
             "approvals": approvals if isinstance(approvals, list) else [],
         }
         atomic_write_json(self._config.cognition_path, cognition_payload)
+        details["wrote_cognition"] = True
+        details["counts"] = {
+            "agents": len(cognition_payload["agents"]),
+            "decisions": len(cognition_payload["decisions"]),
+            "approvals": len(cognition_payload["approvals"]),
+        }
 
         if not self._config.suggestions.enabled:
-            return
+            details["wrote_ai_recommendations"] = False
+            return details
 
         recommendations = self._generate_recommendations()
         payload = {
@@ -158,9 +172,13 @@ class CognitionService:
             "recommendations": recommendations,
         }
         atomic_write_json(self._config.ai_recommendations_path, payload)
+        details["wrote_ai_recommendations"] = True
+        details["counts"]["ai_recommendations"] = len(recommendations)
 
         # Persist local ledger (cooldowns / last suggestion timestamps).
         atomic_write_json(self._config.sent_ledger_path, self._ledger)
+        details["wrote_ledger"] = True
+        return details
 
     def _get_json(self, path: str) -> Any:
         base = self._config.orchestrator.base_url.rstrip("/")

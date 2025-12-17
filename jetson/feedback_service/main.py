@@ -56,15 +56,15 @@ class FeedbackService:
         self._stop_requested = True
 
     def run(self, run_once: bool = False) -> None:
-        self._health.mark_running(self._identity)
+        self._health.mark_startup(self._identity)
         while not self._stop_requested:
             started = time.monotonic()
             try:
-                self.process_once()
-                self._health.mark_running(self._identity)
-            except Exception:
+                status, details = self.process_once()
+                self._health.update(self._identity, status, details)
+            except Exception as exc:
                 logging.exception("feedback cycle failed")
-                self._health.mark_error(self._identity, "feedback cycle failed")
+                self._health.mark_error(self._identity, f"feedback cycle failed: {exc}")
             if run_once:
                 break
             elapsed = time.monotonic() - started
@@ -72,11 +72,16 @@ class FeedbackService:
             if sleep_for > 0:
                 time.sleep(sleep_for)
 
-    def process_once(self) -> None:
+    def process_once(self) -> tuple[str, Dict[str, Any]]:
+        details: Dict[str, Any] = {
+            "events_log_path": str(self._config.events_log_path),
+            "feedback_path": str(self._config.feedback_path),
+            "ai_recommendations_path": str(self._config.ai_recommendations_path),
+        }
         events_payload = load_json(self._config.events_log_path, default={}) or {}
         events = events_payload.get("events") if isinstance(events_payload, dict) else None
         if not isinstance(events, list) or not events:
-            return
+            return "waiting", {**details, "message": "No events available yet (events.json missing/empty)"}
 
         feedback_payload = load_json(self._config.feedback_path, default={"schema_version": FEEDBACK_SCHEMA_VERSION, "feedback": []}) or {
             "schema_version": FEEDBACK_SCHEMA_VERSION,
@@ -98,7 +103,7 @@ class FeedbackService:
             existing_ids.add(item["id"])
 
         if not new_items:
-            return
+            return "waiting", {**details, "message": "No actionable notification feedback events found yet"}
 
         merged = (existing + new_items)[-self._config.max_entries :]
         out = {
@@ -111,6 +116,9 @@ class FeedbackService:
 
         # Update AI recommendation statuses (best-effort).
         self._apply_feedback_to_ai_recommendations(new_items)
+        details["new_feedback"] = len(new_items)
+        details["total_feedback"] = len(merged)
+        return "running", details
 
     def _apply_feedback_to_ai_recommendations(self, feedback_items: List[Dict[str, Any]]) -> None:
         payload = load_json(self._config.ai_recommendations_path, default=None)

@@ -85,15 +85,15 @@ class NotificationService:
         self._stop_requested = True
 
     def run(self, run_once: bool = False) -> None:
-        self._health.mark_running(self._identity)
+        self._health.mark_startup(self._identity)
         while not self._stop_requested:
             started = time.monotonic()
             try:
-                self.process_once()
-                self._health.mark_running(self._identity)
-            except Exception:
+                status, details = self.process_once()
+                self._health.update(self._identity, status, details)
+            except Exception as exc:
                 logging.exception("notification cycle failed")
-                self._health.mark_error(self._identity, "notification cycle failed")
+                self._health.mark_error(self._identity, f"notification cycle failed: {exc}")
             if run_once:
                 break
             elapsed = time.monotonic() - started
@@ -101,14 +101,26 @@ class NotificationService:
             if sleep_for > 0:
                 time.sleep(sleep_for)
 
-    def process_once(self) -> None:
+    def process_once(self) -> tuple[str, Dict[str, Any]]:
+        details: Dict[str, Any] = {
+            "ai_recommendations_path": str(self._config.ai_recommendations_path),
+            "targets_configured": len(self._targets),
+            "default_user_ids": self._config.default_user_ids,
+        }
+        if not self._targets and not self._config.default_user_ids:
+            return "waiting", {**details, "message": "No notify targets configured (notify_targets or default_user_ids)"}
+
         payload = load_json(self._config.ai_recommendations_path, default={}) or {}
         recs = payload.get("recommendations") or []
         if not isinstance(recs, list):
-            return
+            return "waiting", {**details, "message": "ai_recommendations.json missing or invalid"}
 
         now = int(time.time())
         sent_map = self._ledger.setdefault("sent", {})
+        sent_count = 0
+        skipped_count = 0
+        error_count = 0
+        last_error: str | None = None
 
         for rec in recs:
             if not isinstance(rec, dict):
@@ -118,8 +130,10 @@ class NotificationService:
                 continue
             status = str(rec.get("status") or "pending").lower()
             if status != "pending":
+                skipped_count += 1
                 continue
             if self._recently_sent(sent_map, rec_id, now):
+                skipped_count += 1
                 continue
 
             target_users = rec.get("target_users")
@@ -130,17 +144,39 @@ class NotificationService:
 
             if not user_ids:
                 # Nothing configured; skip rather than spamming an unknown default.
+                skipped_count += 1
                 continue
 
             for user_id in user_ids:
                 target = self._targets.get(user_id)
                 if not target:
+                    skipped_count += 1
                     continue
-                self._send_actionable_notification(target, rec)
+                try:
+                    self._send_actionable_notification(target, rec)
+                    sent_count += 1
+                except Exception as exc:
+                    error_count += 1
+                    last_error = f"Failed to notify {user_id} via {target.notify_service}: {exc}"
+                    logging.warning("%s", last_error)
 
             sent_map[rec_id] = {"last_sent": now, "tag": self._tag_for(rec_id), "users": user_ids}
 
         atomic_write_json(self._config.sent_ledger_path, self._ledger)
+        details.update(
+            {
+                "sent": sent_count,
+                "skipped": skipped_count,
+                "errors": error_count,
+                "last_error": last_error,
+                "ledger_path": str(self._config.sent_ledger_path),
+            }
+        )
+        if error_count:
+            return "error", {**details, "message": last_error or "Notification send failures"}
+        if sent_count == 0:
+            return "waiting", {**details, "message": "No pending AI recommendations to notify"}
+        return "running", details
 
     def _send_actionable_notification(self, target: NotifyTarget, rec: Dict[str, Any]) -> None:
         rec_id = str(rec.get("id"))
