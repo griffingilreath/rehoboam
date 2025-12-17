@@ -31,6 +31,14 @@ from pathlib import Path
 
 import yaml
 
+try:
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+except ImportError:
+    # Requests is required for validation but script can run without it
+    requests = None
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -220,6 +228,45 @@ def show_main_menu(existing_env: dict[str, str], existing_api: dict, existing_le
         print("Invalid option. Please enter 0-7.")
 
 
+def validate_ha_connection(base_url: str, token: str) -> None:
+    """Attempt to connect to Home Assistant and verify credentials."""
+    if not requests:
+        return
+    
+    print("\n  Verifying connection to Home Assistant...")
+    
+    # Clean URL
+    url = base_url.rstrip("/")
+    api_url = f"{url}/api/"
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    
+    try:
+        # Create a session with short timeout for validation
+        session = requests.Session()
+        adapter = HTTPAdapter(max_retries=1)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        
+        response = session.get(api_url, headers=headers, timeout=3.0)
+        
+        if response.status_code == 200:
+            print(f"  ✓ Success! Connected to {response.json().get('message', 'Home Assistant API')}")
+        elif response.status_code == 401:
+            print("  ⚠️  Authentication failed (401 Unauthorized). Check your token.")
+        elif response.status_code == 404:
+            print(f"  ⚠️  Endpoint not found at {api_url}. Check base URL.")
+        else:
+            print(f"  ⚠️  Unexpected status: {response.status_code}")
+            
+    except Exception as e:
+        print(f"  ⚠️  Connection failed: {e}")
+    print("")
+
+
 def configure_home_assistant(existing_env: dict[str, str]) -> dict[str, str]:
     """Configure Home Assistant settings."""
     print("\n" + "="*60)
@@ -235,7 +282,49 @@ def configure_home_assistant(existing_env: dict[str, str]) -> dict[str, str]:
         ha_token_prompt += " (press Enter to keep existing)"
     ha_token = prompt(ha_token_prompt, default=ha_token_default if ha_token_default else None, secret=True)
     
+    if ha_base and ha_token:
+        validate_ha_connection(ha_base, ha_token)
+    
     return {"HA_BASE_URL": ha_base, "HA_TOKEN": ha_token}
+
+
+def validate_pihole_connection(base_url: str, token: str) -> None:
+    """Attempt to connect to Pi-hole and verify reachability."""
+    if not requests:
+        return
+        
+    print("\n  Verifying connection to Pi-hole...")
+    url = base_url.rstrip("/")
+    # Try legacy v5 endpoint which is most common
+    api_url = f"{url}/admin/api.php"
+    params = {"summaryRaw": 1}
+    if token:
+        params["auth"] = token
+        
+    try:
+        session = requests.Session()
+        adapter = HTTPAdapter(max_retries=1)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        
+        response = session.get(api_url, params=params, timeout=3.0)
+        
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                if "status" in data:
+                    print(f"  ✓ Success! Connected to Pi-hole (Status: {data.get('status')})")
+                else:
+                    print("  ✓ Connected, but response format unexpected (might be v6 or custom).")
+            except Exception:
+                print("  ✓ Connected, but response was not JSON.")
+        elif response.status_code == 404:
+            print(f"  ⚠️  Endpoint not found at {api_url}. If using v6, this is expected (setup assumes v5 path).")
+        else:
+            print(f"  ⚠️  Unexpected status: {response.status_code}")
+    except Exception as e:
+        print(f"  ⚠️  Connection failed: {e}")
+    print("")
 
 
 def configure_pihole(existing_env: dict[str, str]) -> dict[str, str]:
@@ -258,6 +347,9 @@ def configure_pihole(existing_env: dict[str, str]) -> dict[str, str]:
     if pihole_token_default:
         pihole_token_prompt += " (press Enter to keep existing)"
     pihole_token = prompt(pihole_token_prompt, default=pihole_token_default if pihole_token_default else None, secret=True)
+    
+    if pihole_base:
+        validate_pihole_connection(pihole_base, pihole_token)
     
     return {"PIHOLE_BASE_URL": pihole_base, "PIHOLE_TOKEN": pihole_token}
 
