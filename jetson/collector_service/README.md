@@ -15,7 +15,7 @@ Collects raw device telemetry (reachability, Home Assistant availability, Pi-hol
 
 ## Prerequisites
 
-- Python 3.9+ and `pip install -r jetson/requirements.txt` (needs `requests`, `PyYAML`, `websocket-client`).
+- Python 3.9+ and `pip install -r jetson/requirements.txt` (needs `aiohttp`, `requests`, `PyYAML`, `websocket-client`).
 - `config_sync_service` already producing `data/led_config.json`.
 - Home Assistant long-lived token and reachable base URL.
 - Optional Pi-hole API token (recommended) if monitoring Pi-hole devices.
@@ -128,6 +128,7 @@ python jetson/collector_service/main.py \
 
 ## Operational Notes & Tips
 
+- The service uses `asyncio` and `aiohttp` for non-blocking I/O, allowing it to ping devices and query APIs in parallel without stalling the event loop.
 - The service reloads `led_config.json` every cycle so edits in Home Assistant propagate immediately.
 - Writes to `raw_state.json` are atomic (tmp file + rename) to avoid partially-written files for downstream readers.
 - When Home Assistant or Pi-hole calls fail, warnings are logged and the previous values stay untouched; this prevents flapping states.
