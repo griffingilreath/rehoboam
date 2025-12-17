@@ -17,8 +17,9 @@ class FakeHAClient:
     def read_entity_state(self, entity_id: str) -> str:
         return self._values.get(entity_id, f"value-for-{entity_id}")
         
-    async def read_entity_state_async(self, session, entity_id: str) -> str:
-        return self._values.get(entity_id, f"value-for-{entity_id}")
+    async def read_entity_state_async(self, session, entity_id: str):
+        val = self._values.get(entity_id, f"value-for-{entity_id}")
+        return {"state": val}
 
 
 class ConfigSyncServiceTest(unittest.IsolatedAsyncioTestCase):

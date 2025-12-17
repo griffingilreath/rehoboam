@@ -21,21 +21,11 @@ from jetson.common.json_store import atomic_write_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.config import expand_env_placeholders
+from jetson.common.home_assistant import HomeAssistantClient, HomeAssistantConfig
 
 DEFAULT_CONFIG_PATH = "jetson/config_sync_service/config.yaml"
 DEFAULT_OUTPUT_FILE = "led_config.json"
 LED_CONFIG_SCHEMA_VERSION = "1.0"
-
-
-@dataclass
-class HomeAssistantConfig:
-    base_url: str
-    token: str
-    timeout_seconds: float = 10.0
-    verify_ssl: bool = True
-
-    def normalized_base_url(self) -> str:
-        return self.base_url.rstrip("/")
 
 
 @dataclass
@@ -56,73 +46,6 @@ class ServiceConfig:
     templates: TemplateConfig
     defaults: Dict[str, Optional[str]] = field(default_factory=dict)
     log_level: str = "INFO"
-
-
-class HomeAssistantClient:
-    def __init__(self, config: HomeAssistantConfig):
-        self._config = config
-        self._session = requests.Session()
-        self._session.headers.update({
-            "Authorization": f"Bearer {config.token}",
-            "Content-Type": "application/json",
-        })
-        self._session.verify = config.verify_ssl
-        self._base_url = config.normalized_base_url()
-
-    # Async method
-    async def read_entity_state_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[str]:
-        url = f"{self._base_url}/api/states/{entity_id}"
-        headers = {
-            "Authorization": f"Bearer {self._config.token}",
-            "Content-Type": "application/json",
-        }
-        ssl_context = None if self._config.verify_ssl else False
-        
-        try:
-            async with session.get(url, headers=headers, ssl=ssl_context, timeout=self._config.timeout_seconds) as response:
-                if response.status == 404:
-                    logging.debug("Home Assistant entity %s not found", entity_id)
-                    return None
-                if response.status >= 400:
-                    logging.error("Home Assistant error for %s: %s", entity_id, response.status)
-                    return None
-                
-                payload = await response.json()
-                value = payload.get("state")
-                if isinstance(value, str):
-                    value = value.strip()
-                return value or None
-        except asyncio.TimeoutError:
-             logging.warning("HA request timed out for %s", entity_id)
-             return None
-        except Exception as exc:
-            logging.warning("Failed to reach Home Assistant entity %s: %s", entity_id, exc)
-            return None
-
-    # Sync method kept for reference/fallback
-    def read_entity_state(self, entity_id: str) -> Optional[str]:
-        url = f"{self._base_url}/api/states/{entity_id}"
-        try:
-            response = self._session.get(url, timeout=self._config.timeout_seconds)
-        except requests.RequestException as exc:
-            logging.warning("Failed to reach Home Assistant entity %s: %s", entity_id, exc)
-            return None
-
-        if response.status_code == 404:
-            logging.debug("Home Assistant entity %s not found", entity_id)
-            return None
-
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            logging.error("Home Assistant error for %s: %s", entity_id, exc)
-            return None
-
-        payload = response.json()
-        value = payload.get("state")
-        if isinstance(value, str):
-            value = value.strip()
-        return value or None
 
 
 class ConfigSyncService:
@@ -290,11 +213,13 @@ class ConfigSyncService:
             field_tasks.append(self._client.read_entity_state_async(session, entity_id))
             
         if field_tasks:
-            values = await asyncio.gather(*field_tasks)
-            for (field_name, entity_id), value in zip(field_names, values):
-                if value is None:
-                    logging.debug("No value for %s (entity %s)", field_name, entity_id)
-                results[field_name] = value
+            values_list = await asyncio.gather(*field_tasks)
+            for (fname, ent_id), val in zip(field_names, values_list):
+                if isinstance(val, dict):
+                    val = val.get("state")
+                if val is None:
+                    logging.debug("No value for %s (entity %s)", fname, ent_id)
+                results[fname] = val if isinstance(val, str) else str(val) if val is not None else None
                 
         return results
 
@@ -305,9 +230,11 @@ class ConfigSyncService:
                 continue
             entity_id = template.format(index=index)
             value = self._client.read_entity_state(entity_id)
+            if isinstance(value, dict):
+                value = value.get("state")
             if value is None:
                 logging.debug("No value for %s (entity %s)", field_name, entity_id)
-            results[field_name] = value
+            results[field_name] = value if isinstance(value, str) else str(value) if value is not None else None
         return results
 
 

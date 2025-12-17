@@ -27,6 +27,7 @@ from jetson.common.json_store import atomic_write_json, load_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.config import expand_env_placeholders
+from jetson.common.home_assistant import HomeAssistantClient, HomeAssistantConfig
 
 DEFAULT_CONFIG_PATH = "jetson/collector_service/config.yaml"
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
@@ -52,15 +53,6 @@ class EventLogWriter:
             merged = (existing + events)[-self._max_entries :]
             payload = {"events": merged}
             atomic_write_json(self._path, payload)
-
-
-@dataclass
-class HomeAssistantConfig:
-    base_url: str
-    token: str
-    timeout_seconds: float = 10.0
-    verify_ssl: bool = True
-    availability_states: Dict[str, bool] | None = None
 
 
 @dataclass
@@ -209,78 +201,6 @@ def _derive_summary(
     return f"State → {state}"
 
 
-class HomeAssistantRestClient:
-    def __init__(self, config: HomeAssistantConfig) -> None:
-        self._config = config
-        self._session = requests.Session()
-        self._session.headers.update({
-            "Authorization": f"Bearer {config.token}",
-            "Content-Type": "application/json",
-        })
-        self._session.verify = config.verify_ssl
-        self._base_url = config.base_url.rstrip("/")
-        self._availability_states = config.availability_states or {"on": True, "off": False}
-
-    def read_state(self, entity_id: str) -> Optional[Dict[str, Any]]:
-        # Keep synchronous method for backwards compatibility or single use
-        url = f"{self._base_url}/api/states/{entity_id}"
-        try:
-            response = self._session.get(url, timeout=self._config.timeout_seconds)
-        except requests.RequestException as exc:
-            logging.warning("HA request failed for %s: %s", entity_id, exc)
-            return None
-        if response.status_code == 404:
-            logging.debug("HA entity %s not found", entity_id)
-            return None
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            logging.error("HA error for %s: %s", entity_id, exc)
-            return None
-        return response.json()
-
-    async def read_state_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[Dict[str, Any]]:
-        url = f"{self._base_url}/api/states/{entity_id}"
-        headers = {
-            "Authorization": f"Bearer {self._config.token}",
-            "Content-Type": "application/json",
-        }
-        ssl_context = None if self._config.verify_ssl else False
-        try:
-            async with session.get(url, headers=headers, ssl=ssl_context, timeout=self._config.timeout_seconds) as response:
-                if response.status == 404:
-                    logging.debug("HA entity %s not found", entity_id)
-                    return None
-                if response.status >= 400:
-                    logging.error("HA error for %s: %s", entity_id, response.status)
-                    return None
-                return await response.json()
-        except asyncio.TimeoutError:
-            logging.warning("HA request timed out for %s", entity_id)
-            return None
-        except Exception as exc:
-            logging.warning("HA request failed for %s: %s", entity_id, exc)
-            return None
-
-    def is_available(self, entity_id: str) -> Optional[bool]:
-        state = self.read_state(entity_id)
-        return self._check_availability(state)
-
-    async def is_available_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[bool]:
-        state = await self.read_state_async(session, entity_id)
-        return self._check_availability(state)
-
-    def _check_availability(self, state: Optional[Dict[str, Any]]) -> Optional[bool]:
-        if not state:
-            return None
-        value = state.get("state")
-        if isinstance(value, str):
-            normalized = value.lower()
-            if normalized in self._availability_states:
-                return bool(self._availability_states[normalized])
-        return None
-
-
 class PiHoleClient:
     def __init__(self, config: PiHoleConfig) -> None:
         self._enabled = config.enabled and bool(config.base_url)
@@ -416,6 +336,8 @@ class HomeAssistantEventStream(threading.Thread):
         self._handler = handler
         self._event_config = event_config
         self._stop = threading.Event()
+        self._client = HomeAssistantClient(config)
+        self._client = HomeAssistantClient(config)
 
     def run(self) -> None:  # pragma: no cover - network loop
         while not self._stop.is_set():
@@ -430,7 +352,7 @@ class HomeAssistantEventStream(threading.Thread):
         self._stop.set()
 
     def _listen_once(self) -> None:
-        ws_url = self._websocket_url(self._config.base_url)
+        ws_url = self._client.websocket_url()
         logging.info("Connecting to Home Assistant websocket %s", ws_url)
         ws = websocket.create_connection(ws_url, timeout=self._config.timeout_seconds, sslopt={"cert_reqs": 2 if self._config.verify_ssl else 0})
         try:
@@ -468,20 +390,11 @@ class HomeAssistantEventStream(threading.Thread):
     def _subscribe(self, ws: websocket.WebSocket) -> None:
         ws.send(json.dumps({"id": 1, "type": "subscribe_events", "event_type": "state_changed"}))
 
-    @staticmethod
-    def _websocket_url(base_url: str) -> str:
-        parsed = urlparse(base_url)
-        if parsed.scheme not in {"http", "https"}:
-            raise ValueError("Home Assistant base_url must be http or https")
-        scheme = "ws" if parsed.scheme == "http" else "wss"
-        netloc = parsed.netloc
-        return f"{scheme}://{netloc}/api/websocket"
-
 
 class CollectorService:
     def __init__(self, config: ServiceConfig):
         self._config = config
-        self._ha = HomeAssistantRestClient(config.home_assistant)
+        self._ha = HomeAssistantClient(config.home_assistant)
         self._pinger = Pinger(config.ping)
         self._pihole = PiHoleClient(config.pihole)
         self._event_buffer = EventBuffer(config.event_buffer_seconds)
