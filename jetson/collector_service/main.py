@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import platform
@@ -17,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 
+import aiohttp
 import requests
 import websocket
 import yaml
@@ -31,6 +33,8 @@ DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_EVENTS_LOG_FILENAME = "events.json"
 RAW_STATE_SCHEMA_VERSION = "1.0"
+
+
 class EventLogWriter:
     """Persist recent detailed events for dashboards/e-paper scenes."""
 
@@ -218,10 +222,11 @@ class HomeAssistantRestClient:
         self._availability_states = config.availability_states or {"on": True, "off": False}
 
     def read_state(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        # Keep synchronous method for backwards compatibility or single use
         url = f"{self._base_url}/api/states/{entity_id}"
         try:
             response = self._session.get(url, timeout=self._config.timeout_seconds)
-        except requests.RequestException as exc:  # pragma: no cover - network failure path
+        except requests.RequestException as exc:
             logging.warning("HA request failed for %s: %s", entity_id, exc)
             return None
         if response.status_code == 404:
@@ -229,13 +234,43 @@ class HomeAssistantRestClient:
             return None
         try:
             response.raise_for_status()
-        except requests.HTTPError as exc:  # pragma: no cover
+        except requests.HTTPError as exc:
             logging.error("HA error for %s: %s", entity_id, exc)
             return None
         return response.json()
 
+    async def read_state_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[Dict[str, Any]]:
+        url = f"{self._base_url}/api/states/{entity_id}"
+        headers = {
+            "Authorization": f"Bearer {self._config.token}",
+            "Content-Type": "application/json",
+        }
+        ssl_context = None if self._config.verify_ssl else False
+        try:
+            async with session.get(url, headers=headers, ssl=ssl_context, timeout=self._config.timeout_seconds) as response:
+                if response.status == 404:
+                    logging.debug("HA entity %s not found", entity_id)
+                    return None
+                if response.status >= 400:
+                    logging.error("HA error for %s: %s", entity_id, response.status)
+                    return None
+                return await response.json()
+        except asyncio.TimeoutError:
+            logging.warning("HA request timed out for %s", entity_id)
+            return None
+        except Exception as exc:
+            logging.warning("HA request failed for %s: %s", entity_id, exc)
+            return None
+
     def is_available(self, entity_id: str) -> Optional[bool]:
         state = self.read_state(entity_id)
+        return self._check_availability(state)
+
+    async def is_available_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[bool]:
+        state = await self.read_state_async(session, entity_id)
+        return self._check_availability(state)
+
+    def _check_availability(self, state: Optional[Dict[str, Any]]) -> Optional[bool]:
         if not state:
             return None
         value = state.get("state")
@@ -256,34 +291,60 @@ class PiHoleClient:
         self._session = requests.Session()
 
     def summary(self) -> Optional[Dict[str, Any]]:
+        # Synchronous implementation kept for reference
         if not self._enabled:
             return None
-        # Try legacy v5 endpoint first, then Pi-hole v6 variants.
-        attempts: list[tuple[str, Dict[str, Any]]] = []
-        # v5: /admin/api.php?summaryRaw=1&auth=<token>
-        attempts.append((f"{self._base_url}{self._api_path}", {"summaryRaw": 1}))
-        # v6: common candidates observed in docs/community
-        attempts.append((f"{self._base_url}/api/summary", {}))
-        attempts.append((f"{self._base_url}/api", {"summary": 1}))
-
+        attempts = self._get_attempts()
         for url, params in attempts:
-            params = dict(params)  # copy
-            if self._token:
-                # Most deployments accept "auth" query; users can also override api_path in config if needed.
-                params.setdefault("auth", self._token)
             try:
                 response = self._session.get(url, params=params, timeout=self._timeout)
                 if response.status_code == 404:
                     continue
                 response.raise_for_status()
                 data = response.json()
-                # Minimal sanity check to avoid returning HTML/error pages
                 if isinstance(data, dict):
                     return data
             except requests.RequestException:
                 continue
+        logging.warning("Pi-hole request failed for all known endpoints")
+        return None
+
+    async def summary_async(self, session: aiohttp.ClientSession) -> Optional[Dict[str, Any]]:
+        if not self._enabled:
+            return None
+        attempts = self._get_attempts()
+        
+        for url, params in attempts:
+            try:
+                # Construct query string manually or let aiohttp handle it
+                async with session.get(url, params=params, timeout=self._timeout) as response:
+                    if response.status == 404:
+                        continue
+                    if response.status >= 400:
+                        continue
+                    data = await response.json()
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                continue
         logging.warning("Pi-hole request failed for all known endpoints (checked v5 and v6 paths)")
         return None
+
+    def _get_attempts(self) -> List[Tuple[str, Dict[str, Any]]]:
+        attempts: list[tuple[str, Dict[str, Any]]] = []
+        # v5: /admin/api.php?summaryRaw=1&auth=<token>
+        attempts.append((f"{self._base_url}{self._api_path}", {"summaryRaw": "1"}))
+        # v6: common candidates observed in docs/community
+        attempts.append((f"{self._base_url}/api/summary", {}))
+        attempts.append((f"{self._base_url}/api", {"summary": "1"}))
+        
+        final_attempts = []
+        for url, params in attempts:
+            p = dict(params)
+            if self._token:
+                p.setdefault("auth", self._token)
+            final_attempts.append((url, p))
+        return final_attempts
 
 
 class Pinger:
@@ -293,20 +354,44 @@ class Pinger:
         self._platform = platform.system().lower()
 
     def ping(self, host: str) -> Tuple[bool, Optional[float]]:
+        # Synchronous implementation
         if not host:
             return False, None
-        if self._platform == "windows":
-            cmd = ["ping", "-n", str(self._count), "-w", str(int(self._timeout * 1000)), host]
-        else:
-            cmd = ["ping", "-c", str(self._count), "-W", str(int(self._timeout)), host]
+        cmd = self._get_cmd(host)
         try:
             completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        except OSError as exc:  # pragma: no cover - ping not available
+        except OSError as exc:
             logging.error("Ping command failed: %s", exc)
             return False, None
         reachable = completed.returncode == 0
         rtt = self._parse_rtt_ms(completed.stdout) if reachable else None
         return reachable, rtt
+
+    async def ping_async(self, host: str) -> Tuple[bool, Optional[float]]:
+        if not host:
+            return False, None
+        cmd = self._get_cmd(host)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await process.communicate()
+            stdout_decoded = stdout.decode("utf-8", errors="ignore")
+            
+            reachable = process.returncode == 0
+            rtt = self._parse_rtt_ms(stdout_decoded) if reachable else None
+            return reachable, rtt
+        except OSError as exc:
+             logging.error("Ping command failed: %s", exc)
+             return False, None
+
+    def _get_cmd(self, host: str) -> List[str]:
+        if self._platform == "windows":
+            return ["ping", "-n", str(self._count), "-w", str(int(self._timeout * 1000)), host]
+        else:
+            return ["ping", "-c", str(self._count), "-W", str(int(self._timeout)), host]
 
     @staticmethod
     def _parse_rtt_ms(output: str) -> Optional[float]:
@@ -433,31 +518,60 @@ class CollectorService:
             self._event_stream.stop()
 
     def run(self, run_once: bool = False) -> None:
-        self._health.mark_running(self._identity)
-        while not self._stop_requested:
-            started = time.monotonic()
-            try:
-                self.collect_once()
-            except Exception:
-                logging.exception("Collector cycle failed")
-                self._health.mark_error(self._identity, "collector cycle failed")
-            if run_once:
-                break
-            elapsed = time.monotonic() - started
-            sleep_for = max(0.0, self._config.poll_interval_seconds - elapsed)
-            if sleep_for > 0:
-                time.sleep(sleep_for)
+        # Bootstraps the async event loop for the collector
+        try:
+            asyncio.run(self._run_async(run_once))
+        except KeyboardInterrupt:
+            self.request_stop()
 
-    def collect_once(self) -> None:
+    async def _run_async(self, run_once: bool) -> None:
+        self._health.mark_running(self._identity)
+        async with aiohttp.ClientSession() as session:
+            while not self._stop_requested:
+                started = time.monotonic()
+                try:
+                    await self.collect_once_async(session)
+                except Exception:
+                    logging.exception("Collector cycle failed")
+                    self._health.mark_error(self._identity, "collector cycle failed")
+                if run_once:
+                    break
+                elapsed = time.monotonic() - started
+                sleep_for = max(0.0, self._config.poll_interval_seconds - elapsed)
+                if sleep_for > 0:
+                    await asyncio.sleep(sleep_for)
+
+    async def collect_once_async(self, session: aiohttp.ClientSession) -> None:
         led_config = self._load_led_config()
         if not led_config:
             logging.warning("No led_config.json available yet; skipping cycle")
             return
+
+        # Parallelize device collection
         devices: Dict[str, Dict[str, Any]] = {}
-        for led in led_config.get("leds", []):
+        led_entries = led_config.get("leds", [])
+        
+        # Create tasks for all devices
+        tasks = []
+        names = []
+        for led in led_entries:
             name = led.get("name") or f"LED {led.get('index', '?')}"
-            devices[name] = self._collect_device_state(led)
-        context_snapshot = self._build_context_snapshot()
+            names.append(name)
+            tasks.append(self._collect_device_state_async(led, session))
+        
+        # Wait for all device tasks to complete
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for name, result in zip(names, results):
+                if isinstance(result, Exception):
+                    logging.error("Failed to collect state for %s: %s", name, result)
+                    devices[name] = {}
+                else:
+                    devices[name] = result
+        
+        # Build context snapshot (async)
+        context_snapshot = await self._build_context_snapshot_async(session)
+        
         payload = {
             "schema_version": RAW_STATE_SCHEMA_VERSION,
             "timestamp": int(time.time()),
@@ -466,6 +580,9 @@ class CollectorService:
             "events": self._event_buffer.snapshot(),
             "context": context_snapshot,
         }
+        
+        # File I/O is still blocking but fast enough for this scale; can be offloaded if needed.
+        # Ideally we'd use aiofiles, but simple atomic write is okay for now.
         raw_state_path = self._config.raw_state_path
         atomic_write_json(raw_state_path, payload)
         logging.info("Wrote %s for %d devices", raw_state_path, len(devices))
@@ -482,7 +599,67 @@ class CollectorService:
             logging.error("Invalid JSON in %s: %s", path, exc)
             return None
 
+    async def _collect_device_state_async(self, led_entry: Dict[str, Any], session: aiohttp.ClientSession) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        ip = led_entry.get("ip")
+        
+        # These checks can run in parallel for a single device too
+        coros = {}
+        
+        if ip:
+            coros["ping"] = self._pinger.ping_async(ip)
+        
+        availability_entity = led_entry.get("ha_availability_entity")
+        if availability_entity:
+            coros["ha"] = self._ha.is_available_async(session, availability_entity)
+            
+        is_pihole = (led_entry.get("type") or "").lower() == "pihole"
+        if is_pihole:
+            coros["pihole"] = self._pihole.summary_async(session)
+            
+        # Run gathered tasks
+        # We need to map back results. 
+        # Since we have heterogenous tasks, we can just await them individually or gather.
+        # Gathering is slightly better if we have multiple network calls.
+        
+        keys = list(coros.keys())
+        values = list(coros.values())
+        
+        if values:
+            outcomes = await asyncio.gather(*values, return_exceptions=True)
+            results_map = dict(zip(keys, outcomes))
+            
+            if "ping" in results_map:
+                res = results_map["ping"]
+                if not isinstance(res, Exception):
+                    reachable, rtt_ms = res
+                    result["reachable"] = reachable
+                    if rtt_ms is not None:
+                        result["rtt_ms"] = rtt_ms
+            
+            if "ha" in results_map:
+                res = results_map["ha"]
+                if not isinstance(res, Exception) and res is not None:
+                    result["ha_available"] = res
+
+            if "pihole" in results_map:
+                summary = results_map["pihole"]
+                if not isinstance(summary, Exception) and summary:
+                    result["qps"] = summary.get("queries_last_minute", 0) / 60.0
+                    blocked = summary.get("ads_blocked_today", 0)
+                    total = summary.get("dns_queries_today", 0) or 1
+                    result["blocked_ratio"] = blocked / total
+                    result["pihole_status"] = summary.get("status")
+
+        event_entities = self._extract_event_entities(led_entry)
+        if event_entities:
+            result["events_last_window"] = self._event_buffer.count_for_entities(event_entities)
+            
+        return result
+
+    # Kept synchronous version for completeness but it is no longer used by the main loop
     def _collect_device_state(self, led_entry: Dict[str, Any]) -> Dict[str, Any]:
+        # Legacy/Sync implementation
         result: Dict[str, Any] = {}
         ip = led_entry.get("ip")
         if ip:
@@ -507,6 +684,54 @@ class CollectorService:
                 result["blocked_ratio"] = blocked / total
                 result["pihole_status"] = summary.get("status")
         return result
+    
+    # New async context builder
+    async def _build_context_snapshot_async(self, session: aiohttp.ClientSession) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {
+            "timestamp": int(time.time()),
+            "daypart": self._derive_daypart(),
+            "entities": {},
+        }
+        flags = {"occupied": False, "rain_expected": False}
+        
+        # Parallel fetch of context entities
+        tasks = []
+        for entity_id in self._context_entities:
+            tasks.append(self._ha.read_state_async(session, entity_id))
+            
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for entity_id, state_obj in zip(self._context_entities, results):
+                if isinstance(state_obj, Exception) or not state_obj:
+                    continue
+                snapshot["entities"][entity_id] = {
+                    "state": state_obj.get("state"),
+                    "attributes": state_obj.get("attributes", {}),
+                }
+                self._update_flags_from_entity(flags, entity_id, state_obj)
+        
+        snapshot["flags"] = flags
+        return snapshot
+
+    # Legacy sync context builder
+    def _build_context_snapshot(self) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {
+            "timestamp": int(time.time()),
+            "daypart": self._derive_daypart(),
+            "entities": {},
+        }
+        flags = {"occupied": False, "rain_expected": False}
+        for entity_id in self._context_entities:
+            state_obj = self._ha.read_state(entity_id)
+            if not state_obj:
+                continue
+            snapshot["entities"][entity_id] = {
+                "state": state_obj.get("state"),
+                "attributes": state_obj.get("attributes", {}),
+            }
+            self._update_flags_from_entity(flags, entity_id, state_obj)
+        snapshot["flags"] = flags
+        return snapshot
 
     @staticmethod
     def _extract_event_entities(led_entry: Dict[str, Any]) -> List[str]:
@@ -526,25 +751,6 @@ class CollectorService:
             batch = list(self._event_archive)
             self._event_archive.clear()
         self._event_log_writer.append_many(batch)
-
-    def _build_context_snapshot(self) -> Dict[str, Any]:
-        snapshot: Dict[str, Any] = {
-            "timestamp": int(time.time()),
-            "daypart": self._derive_daypart(),
-            "entities": {},
-        }
-        flags = {"occupied": False, "rain_expected": False}
-        for entity_id in self._context_entities:
-            state_obj = self._ha.read_state(entity_id)
-            if not state_obj:
-                continue
-            snapshot["entities"][entity_id] = {
-                "state": state_obj.get("state"),
-                "attributes": state_obj.get("attributes", {}),
-            }
-            self._update_flags_from_entity(flags, entity_id, state_obj)
-        snapshot["flags"] = flags
-        return snapshot
 
     @staticmethod
     def _derive_daypart() -> str:

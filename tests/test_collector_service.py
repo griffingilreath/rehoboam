@@ -1,5 +1,7 @@
 import json
 import unittest
+import asyncio
+from unittest.mock import MagicMock, AsyncMock
 from pathlib import Path
 
 from jetson.collector_service.main import (
@@ -25,8 +27,8 @@ class FakeWriter:
         self.events = events
 
 
-class CollectorServiceTest(unittest.TestCase):
-    def test_collect_once_writes_raw_state(self):
+class CollectorServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_collect_once_async_writes_raw_state(self):
         data_dir = Path(self._tmpdir())
         led_config = {
             "leds": [
@@ -52,14 +54,23 @@ class CollectorServiceTest(unittest.TestCase):
         service._event_buffer = FakeBuffer()  # type: ignore[attr-defined]
         service._event_log_writer = FakeWriter()  # type: ignore[attr-defined]
         service._load_led_config = lambda: led_config  # type: ignore[attr-defined]
-        service._collect_device_state = lambda led: {"reachable": True}  # type: ignore[attr-defined]
-        service._build_context_snapshot = lambda: {"flags": {"occupied": True}}  # type: ignore[attr-defined]
+        
+        # Mock the async methods
+        service._collect_device_state_async = AsyncMock(return_value={"reachable": True})
+        service._build_context_snapshot_async = AsyncMock(return_value={"flags": {"occupied": True}})
 
-        service.collect_once()
+        # Mock session
+        mock_session = MagicMock()
+
+        await service.collect_once_async(mock_session)
 
         payload = json.loads((data_dir / "raw_state.json").read_text(encoding="utf-8"))
         self.assertEqual(payload["schema_version"], "1.0")
         self.assertTrue(payload["devices"]["Device A"]["reachable"])
+        
+        # Verify mocks were called
+        service._collect_device_state_async.assert_called_once()
+        service._build_context_snapshot_async.assert_called_once()
 
     def _tmpdir(self) -> str:
         from tempfile import TemporaryDirectory
@@ -71,4 +82,3 @@ class CollectorServiceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
