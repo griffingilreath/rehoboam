@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import sys
@@ -10,8 +11,9 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
+import aiohttp
 import requests
 import yaml
 
@@ -19,7 +21,6 @@ from jetson.common.json_store import atomic_write_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.config import expand_env_placeholders
-
 
 DEFAULT_CONFIG_PATH = "jetson/config_sync_service/config.yaml"
 DEFAULT_OUTPUT_FILE = "led_config.json"
@@ -68,11 +69,42 @@ class HomeAssistantClient:
         self._session.verify = config.verify_ssl
         self._base_url = config.normalized_base_url()
 
+    # Async method
+    async def read_entity_state_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[str]:
+        url = f"{self._base_url}/api/states/{entity_id}"
+        headers = {
+            "Authorization": f"Bearer {self._config.token}",
+            "Content-Type": "application/json",
+        }
+        ssl_context = None if self._config.verify_ssl else False
+        
+        try:
+            async with session.get(url, headers=headers, ssl=ssl_context, timeout=self._config.timeout_seconds) as response:
+                if response.status == 404:
+                    logging.debug("Home Assistant entity %s not found", entity_id)
+                    return None
+                if response.status >= 400:
+                    logging.error("Home Assistant error for %s: %s", entity_id, response.status)
+                    return None
+                
+                payload = await response.json()
+                value = payload.get("state")
+                if isinstance(value, str):
+                    value = value.strip()
+                return value or None
+        except asyncio.TimeoutError:
+             logging.warning("HA request timed out for %s", entity_id)
+             return None
+        except Exception as exc:
+            logging.warning("Failed to reach Home Assistant entity %s: %s", entity_id, exc)
+            return None
+
+    # Sync method kept for reference/fallback
     def read_entity_state(self, entity_id: str) -> Optional[str]:
         url = f"{self._base_url}/api/states/{entity_id}"
         try:
             response = self._session.get(url, timeout=self._config.timeout_seconds)
-        except requests.RequestException as exc:  # pragma: no cover - network failure path
+        except requests.RequestException as exc:
             logging.warning("Failed to reach Home Assistant entity %s: %s", entity_id, exc)
             return None
 
@@ -82,7 +114,7 @@ class HomeAssistantClient:
 
         try:
             response.raise_for_status()
-        except requests.HTTPError as exc:  # pragma: no cover - HTTP error path
+        except requests.HTTPError as exc:
             logging.error("Home Assistant error for %s: %s", entity_id, exc)
             return None
 
@@ -132,23 +164,55 @@ class ConfigSyncService:
         self._stop_requested = True
 
     def run(self, run_once: bool = False) -> None:
+        try:
+            asyncio.run(self._run_async(run_once))
+        except KeyboardInterrupt:
+            self.request_stop()
+
+    async def _run_async(self, run_once: bool) -> None:
         self._health.mark_running(self._identity)
-        while not self._stop_requested:
-            started = time.monotonic()
-            try:
-                self.sync_once()
-            except Exception:  # pragma: no cover - defensive logging
-                logging.exception("Unexpected error during sync cycle")
-                self._health.mark_error(self._identity, "sync cycle failed")
+        async with aiohttp.ClientSession() as session:
+            while not self._stop_requested:
+                started = time.monotonic()
+                try:
+                    await self.sync_once_async(session)
+                except Exception:
+                    logging.exception("Unexpected error during sync cycle")
+                    self._health.mark_error(self._identity, "sync cycle failed")
 
-            if run_once:
-                break
+                if run_once:
+                    break
 
-            elapsed = time.monotonic() - started
-            sleep_for = max(0.0, self.config.poll_interval_seconds - elapsed)
-            if sleep_for > 0:
-                time.sleep(sleep_for)
+                elapsed = time.monotonic() - started
+                sleep_for = max(0.0, self.config.poll_interval_seconds - elapsed)
+                if sleep_for > 0:
+                    await asyncio.sleep(sleep_for)
 
+    async def sync_once_async(self, session: aiohttp.ClientSession) -> None:
+        # Create tasks for all LEDs in parallel
+        tasks = []
+        for idx in range(self.config.led_count):
+            tasks.append(self._build_led_entry_async(idx, session))
+            
+        leds = await asyncio.gather(*tasks)
+        
+        payload = {
+            "schema_version": LED_CONFIG_SCHEMA_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "leds": list(leds),
+        }
+        serialized = json.dumps(payload, indent=2, sort_keys=False)
+        if serialized == self._last_serialized_payload:
+            logging.debug("No changes detected; led_config.json not updated")
+            self._health.mark_running(self._identity)
+            return
+
+        atomic_write_json(self._output_file, payload)
+        self._last_serialized_payload = serialized
+        logging.info("Wrote %s with %d LED entries", self._output_file, len(leds))
+        self._health.mark_running(self._identity)
+
+    # Legacy sync method for tests/compatibility
     def sync_once(self) -> None:
         leds = [self._build_led_entry(idx) for idx in range(self.config.led_count)]
         payload = {
@@ -167,8 +231,15 @@ class ConfigSyncService:
         logging.info("Wrote %s with %d LED entries", self._output_file, len(leds))
         self._health.mark_running(self._identity)
 
+    async def _build_led_entry_async(self, index: int, session: aiohttp.ClientSession) -> Dict[str, object]:
+        values = await self._fetch_field_values_async(index, session)
+        return self._construct_led_entry(index, values)
+
     def _build_led_entry(self, index: int) -> Dict[str, object]:
         values = self._fetch_field_values(index)
+        return self._construct_led_entry(index, values)
+
+    def _construct_led_entry(self, index: int, values: Dict[str, Optional[str]]) -> Dict[str, object]:
         defaults = self.config.defaults
         name = values.pop("name", None) or defaults.get("name") or f"LED {index}"
         led_type = values.pop("type", None) or defaults.get("type", "unknown")
@@ -194,6 +265,38 @@ class ConfigSyncService:
                 entry[key] = chosen
 
         return entry
+
+    async def _fetch_field_values_async(self, index: int, session: aiohttp.ClientSession) -> Dict[str, Optional[str]]:
+        results: Dict[str, Optional[str]] = {}
+        # We can also parallelize fetching fields for a single LED if needed, 
+        # but usually fields are derived from the templates map.
+        
+        # In this specific case, we are iterating over templates. 
+        # Since we are already parallelizing across LEDs, doing sequential fetches for fields within one LED is probably fine 
+        # unless there are MANY fields per LED (usually just a few).
+        # Let's keep it simple: 
+        # Wait, network calls are inside the loop! 
+        # "value = self._client.read_entity_state(entity_id)"
+        # We should parallelize this too.
+        
+        field_tasks = []
+        field_names = []
+        
+        for field_name, template in self._templates_map.items():
+            if not template:
+                continue
+            entity_id = template.format(index=index)
+            field_names.append((field_name, entity_id))
+            field_tasks.append(self._client.read_entity_state_async(session, entity_id))
+            
+        if field_tasks:
+            values = await asyncio.gather(*field_tasks)
+            for (field_name, entity_id), value in zip(field_names, values):
+                if value is None:
+                    logging.debug("No value for %s (entity %s)", field_name, entity_id)
+                results[field_name] = value
+                
+        return results
 
     def _fetch_field_values(self, index: int) -> Dict[str, Optional[str]]:
         results: Dict[str, Optional[str]] = {}
