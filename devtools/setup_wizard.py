@@ -284,6 +284,8 @@ def configure_api_dashboard(existing_api: dict) -> None:
         dashboard_origin_prompt += f" (press Enter to keep: {dashboard_origin_default})"
     dashboard_origin = prompt(dashboard_origin_prompt, default=dashboard_origin_default if dashboard_origin_default else None)
     
+    # Ensure config exists
+    ensure_service_config(REPO_ROOT / "jetson" / "api_service")
     api_cfg = REPO_ROOT / "jetson" / "api_service" / "config.yaml"
     
     def _update_api(cfg: dict) -> bool:
@@ -324,6 +326,8 @@ def configure_led_encoder(existing_led: dict) -> None:
     serial_dev_prompt = f"Serial device for Teensy (Press Enter to keep: {current_serial})"
     serial_dev = prompt(serial_dev_prompt, default=current_serial)
     
+    # Ensure config exists
+    ensure_service_config(REPO_ROOT / "jetson" / "led_encoder_service")
     led_cfg = REPO_ROOT / "jetson" / "led_encoder_service" / "config.yaml"
     
     def _update_led(cfg: dict) -> bool:
@@ -397,11 +401,8 @@ def configure_epaper(existing_epaper: dict) -> None:
             changed_local = True
         return changed_local
     
-    if not epaper_cfg.exists():
-        example = REPO_ROOT / "epaper" / "config.example.yaml"
-        if example.exists():
-            shutil.copy(example, epaper_cfg)
-            print(f"Created {epaper_cfg} from {example}")
+    ensure_service_config(REPO_ROOT / "epaper")
+    epaper_cfg = REPO_ROOT / "epaper" / "config.yaml"
     update_yaml(epaper_cfg, _update_epaper)
 
 
