@@ -10,6 +10,7 @@ FastAPI application that serves the Jetson's canonical LED state, configuration,
 - Expose REST endpoints used by the iPhone dashboard, E-ink renderer, and debugging tools.
 - Provide lightweight caching so repeated requests don’t thrash the filesystem.
 - Support CORS for front-ends hosted on different origins.
+- Expose optional cognition + AI recommendation feeds (`cognition.json`, `ai_recommendations.json`, `feedback.json`) when present.
 
 ---
 
@@ -30,6 +31,7 @@ FastAPI application that serves the Jetson's canonical LED state, configuration,
 2. Key fields:
    - `data_dir`: base path for all shared JSON artifacts.
    - `led_config_filename`, `canonical_state_filename`, `history_filename`, `health_filename`: override if you store multiple versions.
+   - `cognition_filename`, `ai_recommendations_filename`, `feedback_filename`: optional “cognition” layer artifacts.
    - `host` / `port`: listening socket (use `0.0.0.0` to allow LAN access).
    - `reload`: enable FastAPI auto-reload in development (don’t use in production supervisors).
    - `cors_origins`: list of allowed origins (e.g., iPhone dashboard URL).
@@ -59,6 +61,10 @@ python jetson/api_service/main.py \
 | `GET /health` | Aggregated service health data | Source file optional |
 | `GET /divergence` | Returns `divergence.json` (score + metrics + recommendations array) | 404 until ML service runs |
 | `GET /recommendations` | Convenience view over the `recommendations` array | Mirrors `/divergence` timestamps, always returns a list |
+| `GET /cognition` | Returns `cognition.json` | 404 until `cognition_service` runs |
+| `GET /recommendations/ai` | Returns `ai_recommendations.json` | 404 until `cognition_service` runs with suggestions enabled |
+| `GET /feedback` | Returns `feedback.json` | Defaults to `{ "feedback": [] }` |
+| `GET /recommendations/all` | Merged ML + AI recommendations | Adds `source` field (`ml`/`ai`) |
 | `GET /info` | Metadata about file locations | Helpful for debugging |
 
 Future endpoints (WebSocket streaming, MQTT hooks) can be layered on top without changing the data model.

@@ -42,6 +42,31 @@ class ApiServiceTest(unittest.TestCase):
                 ],
             },
         )
+        seed_file(
+            data_dir / "cognition.json",
+            {
+                "schema_version": "1.0",
+                "generated_at": "now",
+                "timestamp": 123,
+                "source": {"kind": "external_orchestrator", "base_url": "http://example", "status": "ok"},
+                "agents": [],
+                "decisions": [],
+                "approvals": [],
+            },
+        )
+        seed_file(
+            data_dir / "ai_recommendations.json",
+            {
+                "schema_version": "1.0",
+                "generated_at": "now",
+                "timestamp": 123,
+                "recommendations": [{"id": "rec_1", "timestamp": 123, "suggestion": "Test", "status": "pending"}],
+            },
+        )
+        seed_file(
+            data_dir / "feedback.json",
+            {"schema_version": "1.0", "generated_at": "now", "timestamp": 123, "feedback": []},
+        )
 
         config = ServiceConfig(data_dir=data_dir)
         app = create_app(config)
@@ -54,6 +79,11 @@ class ApiServiceTest(unittest.TestCase):
         rec_resp = client.get("/recommendations")
         self.assertEqual(rec_resp.status_code, 200)
         self.assertEqual(len(rec_resp.json()["recommendations"]), 1)
+        self.assertEqual(client.get("/cognition").status_code, 200)
+        self.assertEqual(client.get("/recommendations/ai").status_code, 200)
+        self.assertEqual(client.get("/feedback").status_code, 200)
+        merged = client.get("/recommendations/all").json()["recommendations"]
+        self.assertGreaterEqual(len(merged), 2)
 
     def _tmpdir(self) -> str:
         from tempfile import TemporaryDirectory

@@ -24,6 +24,7 @@ DEFAULT_CONFIG_PATH = "jetson/ml_service/config.yaml"
 DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
 DEFAULT_HISTORY_FILENAME = "history.json"
 DEFAULT_OUTPUT_FILENAME = "divergence.json"
+DEFAULT_FEEDBACK_FILENAME = "feedback.json"
 DIVERGENCE_SCHEMA_VERSION = "1.0"
 
 
@@ -40,6 +41,7 @@ class ServiceConfig:
     history_window_seconds: int
     baseline_days: int
     zscore_threshold: float
+    feedback_filename: str = DEFAULT_FEEDBACK_FILENAME
     log_level: str = "INFO"
 
     @property
@@ -53,6 +55,10 @@ class ServiceConfig:
     @property
     def output_path(self) -> Path:
         return self.data_dir / self.output_filename
+
+    @property
+    def feedback_path(self) -> Path:
+        return self.data_dir / self.feedback_filename
 
 
 class DivergenceModel:
@@ -196,6 +202,7 @@ class MlService:
             logging.warning("No history available yet; skipping cycle")
             return
         score = self._model.score(history)
+        feedback_summary = self._summarize_feedback()
         payload = {
             "schema_version": DIVERGENCE_SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -204,9 +211,38 @@ class MlService:
             "level": score["level"],
             "metrics": score["metrics"],
             "recommendations": score.get("recommendations", []),
+            "feedback_summary": feedback_summary,
         }
         self._write_output(payload)
         self._health.mark_running(self._identity)
+
+    def _summarize_feedback(self) -> Dict[str, Any]:
+        path = self._config.feedback_path
+        if not path.exists():
+            return {"total": 0, "approved": 0, "declined": 0, "snoozed": 0, "by_user": {}}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {"total": 0, "approved": 0, "declined": 0, "snoozed": 0, "by_user": {}}
+        items = data.get("feedback") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            return {"total": 0, "approved": 0, "declined": 0, "snoozed": 0, "by_user": {}}
+
+        counts = {"approved": 0, "declined": 0, "snoozed": 0}
+        by_user: Dict[str, Dict[str, int]] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            decision = str(item.get("decision") or "")
+            if decision not in counts:
+                continue
+            counts[decision] += 1
+            user_id = str(item.get("user_id") or "unknown")
+            by_user.setdefault(user_id, {"approved": 0, "declined": 0, "snoozed": 0})
+            by_user[user_id][decision] += 1
+
+        total = sum(counts.values())
+        return {"total": total, **counts, "by_user": by_user}
 
     def _load_history(self) -> Optional[List[Dict[str, Any]]]:
         path = self._config.history_path
@@ -245,6 +281,7 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
         canonical_state_filename=data.get("canonical_state_filename", DEFAULT_CANONICAL_FILENAME),
         history_filename=data.get("history_filename", DEFAULT_HISTORY_FILENAME),
         output_filename=data.get("output_filename", DEFAULT_OUTPUT_FILENAME),
+        feedback_filename=data.get("feedback_filename", DEFAULT_FEEDBACK_FILENAME),
         poll_interval_seconds=poll_interval,
         history_window_seconds=int(data.get("history_window_seconds", 900)),
         baseline_days=int(data.get("baseline_days", 7)),

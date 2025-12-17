@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2025-01-01T00:00:00Z",
+  "timestamp": 1735689600,
+  "source": {
+    "kind": "ai_recommendations",
+    "engine": "external_orchestrator_chat"
+  },
+  "recommendations": [
+    {
+      "id": "rec_001",
+      "timestamp": 1735689600,
+      "trigger": "movie_night",
+      "area": "living_room",
+      "suggestion": "Dim living room lights and set a warmer color temperature for movie night.",
+      "confidence": 0.75,
+      "status": "pending",
+      "target_users": ["user_griffin"],
+      "actions": [
+        {
+          "kind": "ha_service",
+          "domain": "script",
+          "service": "turn_on",
+          "entity_id": "script.movie_night"
+        }
+      ],
+      "cooldown_key": "living_room_movie_night",
+      "expires_at": 1735690200
+    }
+  ]
+}
+

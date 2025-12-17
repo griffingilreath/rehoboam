@@ -25,6 +25,9 @@ DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
 DEFAULT_HISTORY_FILENAME = "history.json"
 DEFAULT_HEALTH_FILENAME = "service_health.json"
 DEFAULT_DIVERGENCE_FILENAME = "divergence.json"
+DEFAULT_COGNITION_FILENAME = "cognition.json"
+DEFAULT_AI_RECOMMENDATIONS_FILENAME = "ai_recommendations.json"
+DEFAULT_FEEDBACK_FILENAME = "feedback.json"
 
 
 @dataclass
@@ -35,6 +38,9 @@ class ServiceConfig:
     history_filename: str = DEFAULT_HISTORY_FILENAME
     health_filename: str = DEFAULT_HEALTH_FILENAME
     divergence_filename: str = DEFAULT_DIVERGENCE_FILENAME
+    cognition_filename: str = DEFAULT_COGNITION_FILENAME
+    ai_recommendations_filename: str = DEFAULT_AI_RECOMMENDATIONS_FILENAME
+    feedback_filename: str = DEFAULT_FEEDBACK_FILENAME
     host: str = "0.0.0.0"
     port: int = 8000
     reload: bool = False
@@ -61,6 +67,18 @@ class ServiceConfig:
     @property
     def divergence_path(self) -> Path:
         return self.data_dir / self.divergence_filename
+
+    @property
+    def cognition_path(self) -> Path:
+        return self.data_dir / self.cognition_filename
+
+    @property
+    def ai_recommendations_path(self) -> Path:
+        return self.data_dir / self.ai_recommendations_filename
+
+    @property
+    def feedback_path(self) -> Path:
+        return self.data_dir / self.feedback_filename
 
 
 class JsonFileCache:
@@ -136,6 +154,9 @@ def create_app(config: ServiceConfig) -> FastAPI:
                 "led_config": str(config.led_config_path),
                 "history": str(config.history_path),
                 "divergence": str(config.divergence_path),
+                "cognition": str(config.cognition_path),
+                "ai_recommendations": str(config.ai_recommendations_path),
+                "feedback": str(config.feedback_path),
             },
         }
 
@@ -156,6 +177,44 @@ def create_app(config: ServiceConfig) -> FastAPI:
             "generated_at": data.get("generated_at"),
             "timestamp": data.get("timestamp"),
             "recommendations": recommendations,
+        }
+
+    @app.get("/cognition", summary="External orchestrator cognition feed (agents/decisions/approvals)")
+    def get_cognition() -> Dict[str, Any]:
+        data = cache.read(config.cognition_path, allow_empty=True)
+        if not data:
+            raise HTTPException(status_code=404, detail="Cognition not available")
+        return data
+
+    @app.get("/recommendations/ai", summary="AI-generated suggestions (for notifications/approvals)")
+    def get_ai_recommendations() -> Dict[str, Any]:
+        data = cache.read(config.ai_recommendations_path, allow_empty=True)
+        if not data:
+            raise HTTPException(status_code=404, detail="AI recommendations not available")
+        return data
+
+    @app.get("/feedback", summary="Approve/decline feedback events captured from Home Assistant")
+    def get_feedback() -> Dict[str, Any]:
+        data = cache.read(config.feedback_path, allow_empty=True)
+        return data or {"feedback": []}
+
+    @app.get("/recommendations/all", summary="Unified recommendations feed (ML + AI)")
+    def get_all_recommendations() -> Dict[str, Any]:
+        ml = cache.read(config.divergence_path, allow_empty=True) or {}
+        ai = cache.read(config.ai_recommendations_path, allow_empty=True) or {}
+        ml_recs = (ml.get("recommendations") or []) if isinstance(ml, dict) else []
+        ai_recs = (ai.get("recommendations") or []) if isinstance(ai, dict) else []
+        merged = []
+        for rec in ml_recs:
+            if isinstance(rec, dict):
+                merged.append({**rec, "source": rec.get("source") or "ml"})
+        for rec in ai_recs:
+            if isinstance(rec, dict):
+                merged.append({**rec, "source": rec.get("source") or "ai"})
+        return {
+            "generated_at": max(str(ml.get("generated_at") or ""), str(ai.get("generated_at") or "")),
+            "timestamp": max(int(ml.get("timestamp") or 0), int(ai.get("timestamp") or 0)),
+            "recommendations": merged,
         }
 
     return app
@@ -181,6 +240,9 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
         cors_origins=data.get("cors_origins", []),
         cache_ttl_seconds=float(data.get("cache_ttl_seconds", 0.5)),
         divergence_filename=data.get("divergence_filename", DEFAULT_DIVERGENCE_FILENAME),
+        cognition_filename=data.get("cognition_filename", DEFAULT_COGNITION_FILENAME),
+        ai_recommendations_filename=data.get("ai_recommendations_filename", DEFAULT_AI_RECOMMENDATIONS_FILENAME),
+        feedback_filename=data.get("feedback_filename", DEFAULT_FEEDBACK_FILENAME),
         log_level=log_level,
     )
 

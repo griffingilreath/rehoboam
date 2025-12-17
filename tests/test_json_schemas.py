@@ -18,6 +18,9 @@ FIXTURES = [
     ("history.schema.json", "history.sample.json"),
     ("divergence.schema.json", "divergence.sample.json"),
     ("service_health.schema.json", "service_health.sample.json"),
+    ("cognition.schema.json", "cognition.sample.json"),
+    ("ai_recommendations.schema.json", "ai_recommendations.sample.json"),
+    ("feedback.schema.json", "feedback.sample.json"),
 ]
 
 
