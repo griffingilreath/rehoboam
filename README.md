@@ -480,6 +480,26 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
 - `events.json` captures normalized Home Assistant events (via `collector_service`) for the e-paper activity feed
 - Files are written atomically (`.tmp` + rename) to keep downstream readers safe
 
+### Backup & Long-Term Storage
+
+The system writes high-frequency state to `data/`. For long-term retention or recovery:
+
+1.  **Backup Strategy:**
+    - The critical configuration is in Home Assistant (helpers) and `config.yaml` files.
+    - `data/led_config.json` is ephemeral (rebuilt from HA).
+    - `data/history.json` and `data/events.json` contain the valuable time-series data.
+    - **Recommendation:** Use `rsync` or `rclone` to sync `data/history.json` and `data/events.json` to a NAS or cloud storage daily.
+
+2.  **Storage Media:**
+    - Frequent atomic writes (every 2-5s) can wear out SD cards.
+    - **Best Practice:** Mount an external USB SSD or HDD at `/opt/rehoboam/data` (or symlink `data/` to it).
+    - **Alternative:** Mount `data/` as a `tmpfs` (RAM disk) for performance, and run a cron job to sync it to persistent storage every hour. This eliminates SD card wear completely for the high-frequency writes.
+
+    ```bash
+    # Example: Sync history to a mounted NAS every hour
+    0 * * * * rsync -a /opt/rehoboam/data/history.json /mnt/nas/backups/rehoboam/
+    ```
+
 ---
 
 ## Machine Learning

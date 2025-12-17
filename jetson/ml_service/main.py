@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -62,13 +62,16 @@ class DivergenceModel:
     def __init__(self, baseline_days: int, threshold: float) -> None:
         self._baseline_days = max(1, baseline_days)
         self._threshold = threshold
+        # Cache for baseline metrics to avoid re-computing on every cycle if history is large
+        self._baseline_cache: Tuple[float, Dict[str, tuple[float, float]]] | None = None
+        self._cache_ttl = 300.0  # 5 minutes
 
     def score(self, history: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not history:
             return {"score": 0.0, "level": "unknown"}
         latest = history[-1]
         metrics = self._extract_metrics(latest)
-        baseline = self._compute_baseline(history)
+        baseline = self._get_cached_baseline(history)
         recommendations = self._generate_recommendations(latest, history)
         scores = {}
         for key in metrics:
@@ -86,6 +89,16 @@ class DivergenceModel:
         elif max_z >= self._threshold * 0.5:
             level = "caution"
         return {"score": round(max_z, 3), "level": level, "metrics": scores, "recommendations": recommendations}
+
+    def _get_cached_baseline(self, history: List[Dict[str, Any]]) -> Dict[str, tuple[float, float]]:
+        now = time.time()
+        if self._baseline_cache:
+            timestamp, baseline = self._baseline_cache
+            if now - timestamp < self._cache_ttl:
+                return baseline
+        baseline = self._compute_baseline(history)
+        self._baseline_cache = (now, baseline)
+        return baseline
 
     def _extract_metrics(self, entry: Dict[str, Any]) -> Dict[str, float]:
         leds = entry.get("leds", [])

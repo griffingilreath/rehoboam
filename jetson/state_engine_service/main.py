@@ -231,6 +231,11 @@ class StateEngineService:
         if not self._config.history_enabled:
             return
         path = self._config.history_path
+        
+        # Optimization: Don't read full history every time if just appending
+        # For now, we read full history to enforce retention limits (rolling window)
+        # Future: Use a proper time-series DB (InfluxDB/SQLite) for long-term storage
+        
         existing = load_json(path, {"schema_version": HISTORY_SCHEMA_VERSION, "entries": []})
         if isinstance(existing, dict):
             entries: List[Dict[str, Any]] = list(existing.get("entries") or [])
