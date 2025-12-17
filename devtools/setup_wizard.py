@@ -123,7 +123,7 @@ def update_yaml(path: Path, updater) -> None:
         print(f"Updated {path}")
 
 
-def load_all_configs() -> tuple[dict[str, str], dict, dict, dict]:
+def load_all_configs() -> tuple[dict[str, str], dict, dict, dict, dict]:
     """Load all existing configuration files."""
     env_path = REPO_ROOT / ".env"
     existing_env = load_env_file(env_path)
@@ -151,15 +151,28 @@ def load_all_configs() -> tuple[dict[str, str], dict, dict, dict]:
             existing_epaper = yaml.safe_load(epaper_cfg.read_text(encoding="utf-8")) or {}
         except Exception:
             pass
+            
+    ml_cfg = REPO_ROOT / "jetson" / "ml_service" / "config.yaml"
+    existing_ml = {}
+    if ml_cfg.exists():
+        try:
+            existing_ml = yaml.safe_load(ml_cfg.read_text(encoding="utf-8")) or {}
+        except Exception:
+            pass
     
-    return existing_env, existing_api, existing_led, existing_epaper
+    return existing_env, existing_api, existing_led, existing_epaper, existing_ml
 
 
-def show_config_summary(existing_env: dict[str, str], existing_api: dict, existing_led: dict, existing_epaper: dict) -> None:
+def show_config_summary(existing_env: dict[str, str], existing_api: dict, existing_led: dict, existing_epaper: dict, existing_ml: dict) -> None:
     """Display a summary of current configuration."""
     print("\n" + "="*60)
     print("Current Configuration Summary")
     print("="*60)
+    
+    # Global Data Dir (inferred from api config)
+    data_dir = existing_api.get("data_dir", "./data")
+    print(f"\nSystem:")
+    print(f"  Data Directory: {data_dir}")
     
     # Home Assistant
     ha_url = existing_env.get("HA_BASE_URL", "Not configured")
@@ -182,6 +195,11 @@ def show_config_summary(existing_env: dict[str, str], existing_api: dict, existi
     print(f"  Port: {api_port}")
     print(f"  CORS Origins: {', '.join(cors_origins) if cors_origins else 'None'}")
     
+    # ML Service
+    zscore = existing_ml.get("zscore_threshold", "2.5 (Default)")
+    print(f"\nML Service:")
+    print(f"  Sensitivity (Z-Score): {zscore}")
+    
     # LED Encoder
     serial_dev = existing_led.get("serial_device", "Not configured")
     print(f"\nLED Encoder:")
@@ -196,7 +214,7 @@ def show_config_summary(existing_env: dict[str, str], existing_api: dict, existi
     print("="*60 + "\n")
 
 
-def show_main_menu(existing_env: dict[str, str], existing_api: dict, existing_led: dict, existing_epaper: dict) -> str:
+def show_main_menu(existing_env: dict[str, str], existing_api: dict, existing_led: dict, existing_epaper: dict, existing_ml: dict) -> str:
     """Display main menu and return user's choice."""
     print("\n" + "="*60)
     print("Rehoboam Setup Wizard")
@@ -208,24 +226,28 @@ def show_main_menu(existing_env: dict[str, str], existing_api: dict, existing_le
     api_status = "✓" if existing_api.get("port") else "✗"
     led_status = "✓" if existing_led.get("serial_device") else "✗"
     epaper_status = "✓" if existing_epaper.get("backend") else "✗"
+    # System/ML usually have defaults so check if config exists
+    sys_status = "✓" if existing_api.get("data_dir") else "✓" # Default exists
     
     print("\nWhat would you like to configure?")
     print()
-    print(f"  {ha_status} 1. Home Assistant settings")
-    print(f"  {pihole_status} 2. Pi-hole settings")
-    print(f"  {api_status} 3. API & Dashboard settings")
-    print(f"  {led_status} 4. LED Encoder / Teensy settings")
-    print(f"  {epaper_status} 5. E-paper display settings")
-    print("    6. View current configuration summary")
-    print("    7. Run full setup (configure everything)")
+    print(f"  {sys_status} 1. System & Storage (Data dir, Systemd)")
+    print(f"  {ha_status} 2. Home Assistant settings")
+    print(f"  {pihole_status} 3. Pi-hole settings")
+    print(f"  {api_status} 4. API & Dashboard settings")
+    print(f"  {sys_status} 5. ML Service settings")
+    print(f"  {led_status} 6. LED Encoder / Teensy settings")
+    print(f"  {epaper_status} 7. E-paper display settings")
+    print("    8. View current configuration summary")
+    print("    9. Run full setup (configure everything)")
     print("    0. Exit")
     print()
     
     while True:
-        choice = input("Select an option [0-7]: ").strip()
-        if choice in ["0", "1", "2", "3", "4", "5", "6", "7"]:
+        choice = input("Select an option [0-9]: ").strip()
+        if choice in [str(i) for i in range(10)]:
             return choice
-        print("Invalid option. Please enter 0-7.")
+        print("Invalid option. Please enter 0-9.")
 
 
 def validate_ha_connection(base_url: str, token: str) -> None:
@@ -265,6 +287,104 @@ def validate_ha_connection(base_url: str, token: str) -> None:
     except Exception as e:
         print(f"  ⚠️  Connection failed: {e}")
     print("")
+
+
+def configure_system_storage(existing_api: dict) -> None:
+    """Configure global system settings (data_dir) and generate systemd env."""
+    print("\n" + "="*60)
+    print("System & Storage Configuration")
+    print("="*60)
+    print(
+        "- Data Directory: Where JSON artifacts (history, state) are stored.\n"
+        "  Default is './data' inside the repo. For production, consider using a\n"
+        "  path on an external drive or tmpfs (RAM disk) to reduce SD card wear.\n"
+    )
+    
+    current_data_dir = existing_api.get("data_dir", "./data")
+    data_dir_prompt = f"Data directory (Press Enter to keep: {current_data_dir})"
+    data_dir = prompt(data_dir_prompt, default=current_data_dir)
+    
+    # Update data_dir in ALL services
+    services = [
+        "api_service", "collector_service", "config_sync_service", 
+        "led_encoder_service", "ml_service", "state_engine_service"
+    ]
+    
+    for service in services:
+        cfg_path = REPO_ROOT / "jetson" / service / "config.yaml"
+        ensure_service_config(REPO_ROOT / "jetson" / service)
+        
+        def _update_data_dir(cfg: dict) -> bool:
+            if cfg.get("data_dir") != data_dir:
+                cfg["data_dir"] = data_dir
+                return True
+            return False
+            
+        update_yaml(cfg_path, _update_data_dir)
+        
+    print(f"\n✓ Updated 'data_dir' to '{data_dir}' in all service configs.")
+    
+    print("\nSystemd Environment File Generation:")
+    print("To run as systemd services, you need /etc/rehoboam.env")
+    if confirm("Generate /etc/rehoboam.env content for you to copy?", default=True):
+        repo_path = str(REPO_ROOT.resolve())
+        venv_path = str((REPO_ROOT / ".venv").resolve())
+        data_path = str(Path(data_dir).expanduser().resolve())
+        
+        print("\n" + "-"*40)
+        print("Run this command to create the environment file:")
+        print("-" * 40)
+        print(f"sudo tee /etc/rehoboam.env <<EOF")
+        print(f"REHOBOAM_HOME={repo_path}")
+        print(f"REHOBOAM_VENV={venv_path}")
+        print(f"REHOBOAM_DATA={data_path}")
+        print("EOF")
+        print("-" * 40)
+        input("\nPress Enter to continue...")
+
+
+def configure_ml_service(existing_ml: dict) -> None:
+    """Configure ML service sensitivity."""
+    print("\n" + "="*60)
+    print("ML Service Configuration")
+    print("="*60)
+    print(
+        "Sensitivity determines how easily the system flags 'divergence' (anomaly).\n"
+        "- Low (3.0): Only flag major deviations\n"
+        "- Medium (2.5): Balanced (Default)\n"
+        "- High (2.0): Flag minor deviations\n"
+    )
+    
+    current_z = existing_ml.get("zscore_threshold", 2.5)
+    
+    print(f"Current Z-Score Threshold: {current_z}")
+    choice = prompt("Select sensitivity [Low/Medium/High/Custom]", default="Medium").lower()
+    
+    new_z = current_z
+    if choice in ("l", "low"):
+        new_z = 3.0
+    elif choice in ("m", "medium"):
+        new_z = 2.5
+    elif choice in ("h", "high"):
+        new_z = 2.0
+    elif choice in ("c", "custom"):
+        try:
+            val = float(prompt("Enter custom Z-Score", default=str(current_z)))
+            new_z = val
+        except ValueError:
+            print("Invalid number, keeping current.")
+    
+    ensure_service_config(REPO_ROOT / "jetson" / "ml_service")
+    ml_cfg = REPO_ROOT / "jetson" / "ml_service" / "config.yaml"
+    
+    def _update_ml(cfg: dict) -> bool:
+        if cfg.get("zscore_threshold") != new_z:
+            cfg["zscore_threshold"] = new_z
+            return True
+        return False
+        
+    update_yaml(ml_cfg, _update_ml)
+    print(f"✓ ML Sensitivity set to Z-Score {new_z}")
 
 
 def configure_home_assistant(existing_env: dict[str, str]) -> dict[str, str]:
@@ -502,30 +622,34 @@ def main() -> None:
     print("Rehoboam setup wizard\n")
     
     # Load existing configuration
-    existing_env, existing_api, existing_led, existing_epaper = load_all_configs()
+    existing_env, existing_api, existing_led, existing_epaper, existing_ml = load_all_configs()
     
     # Check if we have existing config
-    has_existing = bool(existing_env or existing_api or existing_led or existing_epaper)
+    has_existing = bool(existing_env or existing_api or existing_led or existing_epaper or existing_ml)
     
     # Show summary on first run if config exists
     if has_existing:
         print("✓ Found existing configuration")
         if confirm("View configuration summary before starting?", default=True):
-            show_config_summary(existing_env, existing_api, existing_led, existing_epaper)
+            show_config_summary(existing_env, existing_api, existing_led, existing_epaper, existing_ml)
     
     while True:
-        choice = show_main_menu(existing_env, existing_api, existing_led, existing_epaper)
+        choice = show_main_menu(existing_env, existing_api, existing_led, existing_epaper, existing_ml)
         
         if choice == "0":
             print("\nExiting setup wizard.")
             break
         elif choice == "1":
+            configure_system_storage(existing_api)
+            # Reload configs to reflect changes
+            existing_env, existing_api, existing_led, existing_epaper, existing_ml = load_all_configs()
+        elif choice == "2":
             env_updates = configure_home_assistant(existing_env)
             existing_env.update(env_updates)
             env_path = REPO_ROOT / ".env"
             write_env_file(env_path, existing_env)
             print("\n✓ Home Assistant configuration updated")
-        elif choice == "2":
+        elif choice == "3":
             env_updates = configure_pihole(existing_env)
             if env_updates:
                 # Pi-hole enabled - update config
@@ -540,22 +664,25 @@ def main() -> None:
                 env_path = REPO_ROOT / ".env"
                 write_env_file(env_path, existing_env)
                 print("\n✓ Pi-hole integration disabled")
-        elif choice == "3":
-            configure_api_dashboard(existing_api)
-            _, existing_api, _, _ = load_all_configs()  # Reload to get updated values
-            print("\n✓ API & Dashboard configuration updated")
         elif choice == "4":
-            configure_led_encoder(existing_led)
-            _, _, existing_led, _ = load_all_configs()  # Reload to get updated values
-            print("\n✓ LED Encoder configuration updated")
+            configure_api_dashboard(existing_api)
+            _, existing_api, _, _, _ = load_all_configs()  # Reload to get updated values
+            print("\n✓ API & Dashboard configuration updated")
         elif choice == "5":
-            configure_epaper(existing_epaper)
-            _, _, _, existing_epaper = load_all_configs()  # Reload to get updated values
-            print("\n✓ E-paper configuration updated")
+            configure_ml_service(existing_ml)
+            _, _, _, _, existing_ml = load_all_configs()
         elif choice == "6":
-            show_config_summary(existing_env, existing_api, existing_led, existing_epaper)
-            input("\nPress Enter to continue...")
+            configure_led_encoder(existing_led)
+            _, _, existing_led, _, _ = load_all_configs()  # Reload to get updated values
+            print("\n✓ LED Encoder configuration updated")
         elif choice == "7":
+            configure_epaper(existing_epaper)
+            _, _, _, existing_epaper, _ = load_all_configs()  # Reload to get updated values
+            print("\n✓ E-paper configuration updated")
+        elif choice == "8":
+            show_config_summary(existing_env, existing_api, existing_led, existing_epaper, existing_ml)
+            input("\nPress Enter to continue...")
+        elif choice == "9":
             # Full setup - configure everything
             print("\n" + "="*60)
             print("Full Setup - Configuring All Settings")
@@ -574,6 +701,8 @@ def main() -> None:
                 ensure_service_config(REPO_ROOT / "jetson" / name)
             
             # Configure each section
+            configure_system_storage(existing_api)
+            
             env_updates = configure_home_assistant(existing_env)
             existing_env.update(env_updates)
             
@@ -587,6 +716,7 @@ def main() -> None:
                 print(f"✓ .env file unchanged: {env_path}")
             
             configure_api_dashboard(existing_api)
+            configure_ml_service(existing_ml)
             configure_led_encoder(existing_led)
             configure_epaper(existing_epaper)
             
@@ -595,8 +725,8 @@ def main() -> None:
                 "\n✓ Full setup complete!\n"
                 "- The `.env` file now holds your HA/Pi-hole secrets (used for local/dev runs).\n"
                 "- Each service has a `config.yaml` you can fine-tune.\n"
-                "- API port, CORS origins, serial device, and (optionally) e-paper backend were configured.\n"
-                "For rack deployment, copy configs to `/etc/rehoboam/*.yaml` and secrets to `/etc/rehoboam/secrets.env` as described in the README."
+                "- Global paths, ML settings, API port, and serial devices are configured.\n"
+                "For rack deployment, verify /etc/rehoboam.env matches your path selection."
             )
             
             if not confirm("\nReturn to main menu?", default=False):
