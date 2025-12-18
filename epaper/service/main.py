@@ -41,7 +41,7 @@ class EpaperService:
             return
 
         try:
-            self._run_scene()
+            self._run_scene(run_once=run_once)
         finally:
             self._manager.standby()
 
@@ -53,7 +53,7 @@ class EpaperService:
         finally:
             self._manager.standby()
 
-    def _run_scene(self) -> None:
+    def _run_scene(self, run_once: bool = False) -> None:
         panel = self._manager.start()
         scene_name = self._config.get("scene", "standby")
         factory = SCENE_MAP.get(scene_name)
@@ -77,6 +77,9 @@ class EpaperService:
                 self._manager.partial(frame, xy=meta.get("xy", (0, 0)), mode=modes.PARTIAL_MODE)
             else:
                 self._manager.full(frame, mode=modes.FULL_MODE)
+            
+            if run_once:
+                break
 
 
 def load_config(path: Path, overrides: RunnerOverrides) -> dict[str, Any]:

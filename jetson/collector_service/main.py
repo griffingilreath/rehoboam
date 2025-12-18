@@ -587,7 +587,11 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
         data["data_dir"] = overrides.data_dir
     else:
         if "data_dir" not in data:
-            data["data_dir"] = Path("./data").expanduser().resolve()
+            data["data_dir"] = "./data"
+    
+    # Ensure paths are expanded/resolved even if coming from YAML
+    if "data_dir" in data:
+        data["data_dir"] = Path(data["data_dir"]).expanduser().resolve()
     
     if overrides.poll_interval_seconds:
         data["poll_interval_seconds"] = overrides.poll_interval_seconds
