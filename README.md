@@ -265,29 +265,41 @@ Keep configs + runtime JSON in `data/` while testing, but **never commit** them 
 ### Rack Deployment (Jetson Nano)
 
 ```bash
+# 1. Setup system directories
 sudo mkdir -p /etc/rehoboam && sudo chown jetson:jetson /etc/rehoboam
-cp jetson/*/config.example.yaml /etc/rehoboam/<service>.yaml   # edit with real tokens/IPs
-
-# optional: centralize secrets (read automatically if present)
-sudo tee /etc/rehoboam/secrets.env <<'ENV'
-# Home Assistant
-HA_BASE_URL=http://homeassistant.local:8123
-HA_TOKEN=REPLACE_ME
-# Pi-hole
-PIHOLE_BASE_URL=http://pihole.local
-PIHOLE_TOKEN=REPLACE_ME
-ENV
-
-# create env file for systemd units
+# Create env file for systemd units
 sudo tee /etc/rehoboam.env <<'ENV'
 REHOBOAM_HOME=/opt/rehoboam
 REHOBOAM_VENV=/opt/rehoboam/.venv
 REHOBOAM_DATA=/opt/rehoboam/data
 ENV
 
-cd /opt/rehoboam && python -m venv .venv && source .venv/bin/activate
+# 2. Clone to /opt/rehoboam
+sudo git clone https://github.com/griffingilreath/rehoboam.git /opt/rehoboam
+sudo chown -R jetson:jetson /opt/rehoboam
+cd /opt/rehoboam
+
+# 3. Setup environment & config
+python -m venv .venv && source .venv/bin/activate
 pip install -r jetson/requirements.txt
 
+# Run the wizard to generate config.yaml files and secrets
+# (This creates .env and jetson/*/config.yaml)
+python devtools/setup_wizard.py
+
+# OR configure manually:
+# cp jetson/*/config.example.yaml jetson/*/config.yaml
+# tee .env <<'EOF'
+# HA_BASE_URL=...
+# HA_TOKEN=...
+# EOF
+
+# 4. Move secrets to system path (optional, but recommended for security)
+# The services check /etc/rehoboam/secrets.env before .env
+sudo mv .env /etc/rehoboam/secrets.env
+sudo chmod 600 /etc/rehoboam/secrets.env
+
+# 5. Install systemd units
 sudo cp systemd/rehoboam-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now rehoboam-config-sync.service rehoboam-collector.service \
@@ -295,7 +307,7 @@ sudo systemctl enable --now rehoboam-config-sync.service rehoboam-collector.serv
   rehoboam-ml.service rehoboam-epaper.service
 ```
 
-Secrets (Home Assistant and Pi-hole tokens) live only in `/etc/rehoboam/*.yaml`; never commit real config files.
+Secrets (Home Assistant and Pi-hole tokens) live in `/etc/rehoboam/secrets.env` or `.env`; never commit real config files.
 
 > **E-paper shutdown:** `rehoboam-epaper.service` calls `python -m epaper.service.main ... --shutdown` in `ExecStop` so the IT8951 panel always receives a clean refresh + sleep before power loss. If you create custom units, keep that shutdown step or you risk permanent ghosting on the glass.
 
@@ -470,6 +482,26 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
 - `service_health.json` entries show `status`, `updated_at`, host, pid, and optional error messages—surface them via API `/health` or inspect directly
 - `events.json` captures normalized Home Assistant events (via `collector_service`) for the e-paper activity feed
 - Files are written atomically (`.tmp` + rename) to keep downstream readers safe
+
+### Backup & Long-Term Storage
+
+The system writes high-frequency state to `data/`. For long-term retention or recovery:
+
+1.  **Backup Strategy:**
+    - The critical configuration is in Home Assistant (helpers) and `config.yaml` files.
+    - `data/led_config.json` is ephemeral (rebuilt from HA).
+    - `data/history.json` and `data/events.json` contain the valuable time-series data.
+    - **Recommendation:** Use `rsync` or `rclone` to sync `data/history.json` and `data/events.json` to a NAS or cloud storage daily.
+
+2.  **Storage Media:**
+    - Frequent atomic writes (every 2-5s) can wear out SD cards.
+    - **Best Practice:** Mount an external USB SSD or HDD at `/opt/rehoboam/data` (or symlink `data/` to it).
+    - **Alternative:** Mount `data/` as a `tmpfs` (RAM disk) for performance, and run a cron job to sync it to persistent storage every hour. This eliminates SD card wear completely for the high-frequency writes.
+
+    ```bash
+    # Example: Sync history to a mounted NAS every hour
+    0 * * * * rsync -a /opt/rehoboam/data/history.json /mnt/nas/backups/rehoboam/
+    ```
 
 ---
 

@@ -19,7 +19,12 @@ def load_json(path: Path, default: Any = None) -> Any:
 
 
 def atomic_write_json(path: Path, payload: Any, *, indent: int = 2) -> None:
-    """Atomically write JSON to *path* using a temp file + rename."""
+    """Atomically write JSON to *path* using a temp file + rename.
+    
+    Note: Frequent atomic writes can wear out SD cards.
+    Consider mounting data_dir as tmpfs for high-frequency artifacts (raw_state.json),
+    or use a persistent drive (SSD/HDD) for history.json.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent) as tmp:
         json.dump(payload, tmp, indent=indent)
