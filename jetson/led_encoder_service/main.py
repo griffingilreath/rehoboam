@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import struct
 import sys
 import time
 from dataclasses import dataclass
