@@ -8,5 +8,43 @@ poll_interval_seconds: 5
 history_window_seconds: 900
 baseline_days: 7
 zscore_threshold: 2.5
+# Baseline options:
+# - baseline_bucket: "global" compares against all recent history; "daypart" compares morning/afternoon/evening/night separately.
+# - baseline_method: "standard" uses mean + population stdev; "robust" uses median + MAD-derived scale.
+baseline_bucket: global
+baseline_method: standard
+# Scoring:
+# - score_method: "max" uses the maximum metric z-score (legacy/default).
+# - score_method: "weighted_mean" averages metric z-scores using metric_weights.
+# - zscore_cap prevents one metric from dominating weighted scoring.
+score_method: max
+zscore_cap: 10.0
+# Optional weights (defaults to 1.0 per metric when omitted).
+# metric_weights:
+#   error_count: 2.0
+#   error_ratio: 2.0
+#   active_leds: 1.0
+
+# Recommendations (deterministic rules; no "model training" required).
+recommendations:
+  enabled: true
+  # Path is resolved relative to this config file.
+  rules_file: rules.example.yaml
+  # Status/cooldown tracking (written by ml_service).
+  state_filename: recommendations_state.json
+
+# Feature store artifact (optional; useful for offline training/evaluation).
+features:
+  enabled: false
+  output_filename: features.json
+  max_entries: 5000
+
+# Optional trained model (Phase C). This remains disabled by default.
+model:
+  enabled: false
+  type: isolation_forest
+  # Paths are resolved relative to this config file.
+  model_path: ../../data/models/isolation_forest/latest/model.pkl
+  metadata_path: ../../data/models/isolation_forest/latest/metadata.json
 logging:
   level: INFO

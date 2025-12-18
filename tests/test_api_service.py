@@ -38,7 +38,14 @@ class ApiServiceTest(unittest.TestCase):
                 "level": "normal",
                 "metrics": {},
                 "recommendations": [
-                    {"timestamp": 123, "target": "Blind", "suggestion": "Close", "confidence": 0.7, "status": "pending"}
+                    {
+                        "id": "test:close_blind",
+                        "timestamp": 123,
+                        "target": "Blind",
+                        "suggestion": "Close",
+                        "confidence": 0.7,
+                        "status": "pending",
+                    }
                 ],
             },
         )
@@ -84,6 +91,11 @@ class ApiServiceTest(unittest.TestCase):
         self.assertEqual(client.get("/feedback").status_code, 200)
         merged = client.get("/recommendations/all").json()["recommendations"]
         self.assertGreaterEqual(len(merged), 2)
+
+        ack = client.post("/recommendations/test:close_blind", json={"status": "applied"})
+        self.assertEqual(ack.status_code, 200)
+        self.assertEqual(ack.json()["status"], "applied")
+        self.assertTrue((data_dir / "recommendations_state.json").exists())
 
     def _tmpdir(self) -> str:
         from tempfile import TemporaryDirectory

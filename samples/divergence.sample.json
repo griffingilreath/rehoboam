@@ -14,11 +14,13 @@
   },
   "recommendations": [
     {
+      "id": "rain_expected_close_blinds:Living Room Blinds",
       "timestamp": 1735699500,
       "trigger": "rain_expected",
       "target": "Living Room Blinds",
       "suggestion": "Close blinds",
       "confidence": 0.72,
+      "priority": 1,
       "status": "pending"
     }
   ]
