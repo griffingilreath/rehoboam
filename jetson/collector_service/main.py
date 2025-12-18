@@ -26,7 +26,7 @@ from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.config import expand_env_placeholders
 
-DEFAULT_CONFIG_PATH = "jetson/collector_service/config.yaml"
+DEFAULT_CONFIG_PATH = str(Path(__file__).parent / "config.yaml")
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_EVENTS_LOG_FILENAME = "events.json"

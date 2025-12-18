@@ -19,7 +19,7 @@ from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
 
 
-DEFAULT_CONFIG_PATH = "jetson/state_engine_service/config.yaml"
+DEFAULT_CONFIG_PATH = str(Path(__file__).parent / "config.yaml")
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
