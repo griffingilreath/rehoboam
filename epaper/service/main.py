@@ -47,6 +47,12 @@ class EpaperService:
         self._stop_requested = True
 
     def run(self, run_once: bool = False) -> None:
+        """
+        Run the scene.
+
+        Args:
+            run_once: Ignored; this service currently always runs a single pass.
+        """
         if self._shutdown_mode:
             self._do_shutdown()
             return
@@ -134,7 +140,7 @@ def main() -> None:
         load_config=load_service_config,
         create_service=_create_service,
         add_arguments=_add_extra_args,
-        supports_once=True,
+        supports_once=False,
         supports_interval_override=False,
     )
 
