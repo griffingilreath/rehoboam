@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from jetson.common.service_runner import RunnerOverrides, run_service
 from ..backends.factory import create_backend
 from ..core import modes
 from ..core.display import DisplayManager
@@ -21,64 +22,84 @@ SCENE_MAP = {
 }
 
 
-def load_config(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+class EpaperService:
+    def __init__(self, config: dict[str, Any], args: argparse.Namespace):
+        self._config = config
+        self._args = args
+        self._stop_requested = False
+        
+        backend_cfg = config.get("backend_config") or {}
+        backend = create_backend(config.get("backend", "fake"), **backend_cfg)
+        self._manager = DisplayManager(backend)
 
+    def request_stop(self, *_: Any) -> None:
+        self._stop_requested = True
 
-def run_scene(cfg: dict[str, Any]) -> None:
-    backend_cfg = cfg.get("backend_config") or {}
-    backend = create_backend(cfg.get("backend", "fake"), **backend_cfg)
-    manager = DisplayManager(backend)
-    panel = manager.start()
-    try:
-        scene_name = cfg.get("scene", "standby")
+    def run(self, run_once: bool = False) -> None:
+        if getattr(self._args, "shutdown", False):
+            self._shutdown_panel()
+            return
+
+        self._manager.start()
+        try:
+            self._run_scene()
+        finally:
+            self._manager.standby()
+
+    def _shutdown_panel(self) -> None:
+        try:
+            self._manager.start()
+        except Exception:
+            logging.exception("Failed to start backend for shutdown; proceeding anyway")
+        finally:
+            self._manager.standby()
+
+    def _run_scene(self) -> None:
+        panel = self._manager.start()
+        scene_name = self._config.get("scene", "standby")
         factory = SCENE_MAP.get(scene_name)
         if not factory:
-            raise SystemExit(f"Unknown scene '{scene_name}'")
-        scene_kwargs = {k: v for k, v in cfg.items() if k not in {"backend", "scene", "log_level"}}
+            logging.error("Unknown scene '%s'", scene_name)
+            return
+
+        # Filter out config keys that aren't for the scene
+        scene_kwargs = {
+            k: v for k, v in self._config.items() 
+            if k not in {"backend", "scene", "log_level", "backend_config"}
+        }
         scene = factory(**scene_kwargs)
         scene.bootstrap(panel)
+        
         for frame, meta in scene.frames():
+            if self._stop_requested:
+                break
+            
             if meta.get("hint") == "partial":
-                manager.partial(frame, xy=meta.get("xy", (0, 0)), mode=modes.PARTIAL_MODE)
+                self._manager.partial(frame, xy=meta.get("xy", (0, 0)), mode=modes.PARTIAL_MODE)
             else:
-                manager.full(frame, mode=modes.FULL_MODE)
-    finally:
-        manager.standby()
+                self._manager.full(frame, mode=modes.FULL_MODE)
 
 
-def shutdown(cfg: dict[str, Any]) -> None:
-    backend_cfg = cfg.get("backend_config") or {}
-    backend = create_backend(cfg.get("backend", "fake"), **backend_cfg)
-    manager = DisplayManager(backend)
-    try:
-        manager.start()
-    except Exception:
-        logging.exception("Failed to start backend for shutdown; proceeding anyway")
-    finally:
-        manager.standby()
+def load_config(path: Path, overrides: RunnerOverrides) -> dict[str, Any]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    # We could implement env expansion here if needed, similar to jetson services
+    return data
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run epaper scene from YAML config")
-    parser.add_argument("--config", default="epaper/config.yaml")
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--shutdown", action="store_true", help="Only send standby command to the panel")
-    args = parser.parse_args(argv)
 
-    config_path = Path(args.config).expanduser()
-    if not config_path.exists():
-        raise SystemExit(f"Config file not found: {config_path}")
 
-    cfg = load_config(config_path)
-    logging.basicConfig(level=getattr(logging, cfg.get("log_level", "INFO")))
-
-    if args.shutdown:
-        shutdown(cfg)
-    else:
-        run_scene(cfg)
-
-    return 0
+def main() -> None:
+    run_service(
+        service_name="epaper_service",
+        description="Run epaper scene from YAML config",
+        default_config_path="epaper/config.yaml",
+        load_config=load_config,
+        create_service=EpaperService,
+        add_arguments=add_arguments,
+    )
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -11,7 +11,6 @@ import sys
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
@@ -20,6 +19,7 @@ from urllib.parse import urlparse
 import requests
 import websocket
 import yaml
+from pydantic import BaseModel, Field
 
 from jetson.common.json_store import atomic_write_json, load_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
@@ -31,6 +31,8 @@ DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_EVENTS_LOG_FILENAME = "events.json"
 RAW_STATE_SCHEMA_VERSION = "1.0"
+
+
 class EventLogWriter:
     """Persist recent detailed events for dashboards/e-paper scenes."""
 
@@ -50,45 +52,40 @@ class EventLogWriter:
             atomic_write_json(self._path, payload)
 
 
-@dataclass
-class HomeAssistantConfig:
+class HomeAssistantConfig(BaseModel):
     base_url: str
     token: str
     timeout_seconds: float = 10.0
     verify_ssl: bool = True
-    availability_states: Dict[str, bool] | None = None
+    availability_states: Optional[Dict[str, bool]] = None
 
 
-@dataclass
-class PiHoleConfig:
+class PiHoleConfig(BaseModel):
     enabled: bool = False
-    base_url: str | None = None
+    base_url: Optional[str] = None
     api_path: str = "/admin/api.php"
-    token: str | None = None
+    token: Optional[str] = None
     timeout_seconds: float = 5.0
 
 
-@dataclass
-class PingConfig:
+class PingConfig(BaseModel):
     count: int = 1
     timeout_seconds: float = 1.0
 
 
-@dataclass
-class EventConfig:
+class EventConfig(BaseModel):
     enabled: bool = True
     reconnect_delay_seconds: float = 5.0
 
 
-@dataclass
-class ServiceConfig:
+class ServiceConfig(BaseModel):
     data_dir: Path
-    led_config_filename: str
-    raw_state_filename: str
-    events_log_filename: str
+    led_config_filename: str = DEFAULT_LED_CONFIG_FILENAME
+    raw_state_filename: str = DEFAULT_RAW_STATE_FILENAME
+    events_log_filename: str = DEFAULT_EVENTS_LOG_FILENAME
     poll_interval_seconds: float
-    event_buffer_seconds: float
-    context_entities: List[str]
+    event_buffer_seconds: float = 10.0
+    context_entities: List[str] = Field(default_factory=list)
     home_assistant: HomeAssistantConfig
     pihole: PiHoleConfig
     ping: PingConfig
@@ -258,18 +255,14 @@ class PiHoleClient:
     def summary(self) -> Optional[Dict[str, Any]]:
         if not self._enabled:
             return None
-        # Try legacy v5 endpoint first, then Pi-hole v6 variants.
         attempts: list[tuple[str, Dict[str, Any]]] = []
-        # v5: /admin/api.php?summaryRaw=1&auth=<token>
         attempts.append((f"{self._base_url}{self._api_path}", {"summaryRaw": 1}))
-        # v6: common candidates observed in docs/community
         attempts.append((f"{self._base_url}/api/summary", {}))
         attempts.append((f"{self._base_url}/api", {"summary": 1}))
 
         for url, params in attempts:
-            params = dict(params)  # copy
+            params = dict(params)
             if self._token:
-                # Most deployments accept "auth" query; users can also override api_path in config if needed.
                 params.setdefault("auth", self._token)
             try:
                 response = self._session.get(url, params=params, timeout=self._timeout)
@@ -277,12 +270,11 @@ class PiHoleClient:
                     continue
                 response.raise_for_status()
                 data = response.json()
-                # Minimal sanity check to avoid returning HTML/error pages
                 if isinstance(data, dict):
                     return data
             except requests.RequestException:
                 continue
-        logging.warning("Pi-hole request failed for all known endpoints (checked v5 and v6 paths)")
+        logging.warning("Pi-hole request failed for all known endpoints")
         return None
 
 
@@ -332,14 +324,24 @@ class HomeAssistantEventStream(threading.Thread):
         self._event_config = event_config
         self._stop = threading.Event()
 
-    def run(self) -> None:  # pragma: no cover - network loop
+    def run(self) -> None:
+        delay = self._event_config.reconnect_delay_seconds
         while not self._stop.is_set():
+            started = time.monotonic()
             try:
                 self._listen_once()
             except Exception as exc:
                 logging.warning("Event stream disconnected: %s", exc)
-            if not self._stop.wait(self._event_config.reconnect_delay_seconds):
-                logging.info("Reconnecting to Home Assistant event stream...")
+            
+            # Reset backoff if we stayed connected for a while
+            if time.monotonic() - started > 30.0:
+                delay = self._event_config.reconnect_delay_seconds
+
+            if not self._stop.is_set():
+                logging.info("Reconnecting to Home Assistant event stream in %.1fs...", delay)
+                if self._stop.wait(delay):
+                    break
+                delay = min(delay * 2, 300.0)
 
     def stop(self) -> None:
         self._stop.set()
@@ -400,7 +402,7 @@ class CollectorService:
         self._pinger = Pinger(config.ping)
         self._pihole = PiHoleClient(config.pihole)
         self._event_buffer = EventBuffer(config.event_buffer_seconds)
-        self._event_archive: Deque[Dict[str, Any]] = deque()
+        self._event_archive: Deque[Dict[str, Any]] = deque(maxlen=2000)
         self._archive_lock = threading.Lock()
         self._event_log_writer = EventLogWriter(config.events_log_path)
         self._context_entities = config.context_entities
@@ -580,28 +582,20 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     data = expand_env_placeholders(data)
     overrides = overrides or RunnerOverrides()
-    home_cfg = HomeAssistantConfig(**data.get("home_assistant", {}))
-    pihole_cfg = PiHoleConfig(**data.get("pihole", {}))
-    ping_cfg = PingConfig(**data.get("ping", {}))
-    events_cfg = EventConfig(**data.get("events", {}))
-    data_dir = overrides.data_dir or Path(data.get("data_dir", "./data")).expanduser().resolve()
-    poll_interval = overrides.poll_interval_seconds or float(data.get("poll_interval_seconds", 3))
-    log_level = overrides.log_level or (data.get("logging", {}) or {}).get("level", "INFO")
-    config = ServiceConfig(
-        data_dir=data_dir,
-        led_config_filename=data.get("led_config_filename", DEFAULT_LED_CONFIG_FILENAME),
-        raw_state_filename=data.get("raw_state_filename", DEFAULT_RAW_STATE_FILENAME),
-        events_log_filename=data.get("events_log_filename", DEFAULT_EVENTS_LOG_FILENAME),
-        poll_interval_seconds=poll_interval,
-        event_buffer_seconds=float(data.get("event_buffer_seconds", 10)),
-        context_entities=data.get("context_entities", []) or [],
-        home_assistant=home_cfg,
-        pihole=pihole_cfg,
-        ping=ping_cfg,
-        events=events_cfg,
-        log_level=log_level,
-    )
-    return config
+    
+    if overrides.data_dir:
+        data["data_dir"] = overrides.data_dir
+    else:
+        if "data_dir" not in data:
+            data["data_dir"] = Path("./data").expanduser().resolve()
+    
+    if overrides.poll_interval_seconds:
+        data["poll_interval_seconds"] = overrides.poll_interval_seconds
+    
+    if overrides.log_level:
+        data["log_level"] = overrides.log_level
+        
+    return ServiceConfig(**data)
 
 
 def main() -> None:
