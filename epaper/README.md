@@ -50,6 +50,8 @@ cp epaper/config.example.yaml epaper/config.yaml
 python -m epaper.service.main --config epaper/config.yaml
 ```
 
+The service also supports `--once` to run a single pass (render one frame) and exit, which is useful for debugging.
+
 ## IT8951 Setup
 
 ### SPI backend
