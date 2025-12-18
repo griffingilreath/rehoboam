@@ -1,8 +1,9 @@
 backend: fake
 backend_config: {}
 
-scene: standby
+scene: standby # Choices: standby, activity_log, pihole, divergence, generative
 text: REHOBOAM
 font: null
+mode: landscape # Options for 'generative' scene: landscape, fabric
 
 log_level: INFO

@@ -23,7 +23,8 @@ def parse_backend_options(items: list[str]) -> dict[str, object]:
         if key == "size" and "x" in value:
             try:
                 w, h = value.lower().split("x", 1)
-                result[key] = (int(w), int(h))
+                result["width"] = int(w)
+                result["height"] = int(h)
                 continue
             except ValueError:
                 raise SystemExit(f"Invalid size value '{value}'. Expected WIDTHxHEIGHT.")
