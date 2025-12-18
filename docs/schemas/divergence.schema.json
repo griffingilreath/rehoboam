@@ -27,15 +27,18 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["timestamp", "suggestion", "status"],
+        "required": ["id", "timestamp", "suggestion", "status"],
         "properties": {
+          "id": {"type": "string"},
           "timestamp": {"type": "integer"},
           "trigger": {"type": "string"},
           "target": {"type": "string"},
           "suggestion": {"type": "string"},
           "confidence": {"type": "number"},
+          "priority": {"type": "integer"},
           "status": {"type": "string"},
-          "actions": {"type": "array", "items": {"type": "object"}}
+          "actions": {"type": "array", "items": {"type": "object"}},
+          "details": {"type": "object", "additionalProperties": true}
         },
         "additionalProperties": true
       }
