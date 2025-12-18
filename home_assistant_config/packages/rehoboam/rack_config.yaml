@@ -1,0 +1,331 @@
+# Home Assistant Helper Configuration for Rehoboam
+#
+# This file is synced with the Rehoboam 'led_config.json' data.
+# Note that we have mapped:
+#   LED 14 -> Snow Plow Status (S7)
+#   LED 15 -> Water Usage (S8)
+#
+# This demonstrates how custom municipal and utility sensors can
+# drive the LED visualization.
+
+input_text:
+  # LED 0 (R1)
+  led0_name:
+    name: "LED 0 Name"
+    initial: "Ethernet In"
+  led0_ip:
+    name: "LED 0 IP"
+    initial: ""
+  led0_ha_availability_entity:
+    name: "LED 0 HA Availability Entity"
+    initial: ""
+  led0_event_entities:
+    name: "LED 0 Event Entities"
+    initial: ""
+
+  # LED 1 (R2)
+  led1_name:
+    name: "LED 1 Name"
+    initial: "Rehoboam"
+  led1_ip:
+    name: "LED 1 IP"
+    initial: "192.168.1.50"
+  led1_ha_availability_entity:
+    name: "LED 1 HA Availability Entity"
+    initial: ""
+  led1_event_entities:
+    name: "LED 1 Event Entities"
+    initial: ""
+
+  # LED 2 (R3)
+  led2_name:
+    name: "LED 2 Name"
+    initial: "Pi-hole"
+  led2_ip:
+    name: "LED 2 IP"
+    initial: "192.168.1.51"
+  led2_ha_availability_entity:
+    name: "LED 2 HA Availability Entity"
+    initial: ""
+  led2_event_entities:
+    name: "LED 2 Event Entities"
+    initial: "sensor.pihole_dns_queries_total"
+
+  # LED 3 (R4)
+  led3_name:
+    name: "LED 3 Name"
+    initial: "Pi-Drive"
+  led3_ip:
+    name: "LED 3 IP"
+    initial: "192.168.1.60"
+  led3_ha_availability_entity:
+    name: "LED 3 HA Availability Entity"
+    initial: ""
+  led3_event_entities:
+    name: "LED 3 Event Entities"
+    initial: ""
+
+  # LED 4 (R5)
+  led4_name:
+    name: "LED 4 Name"
+    initial: "Mac Mini"
+  led4_ip:
+    name: "LED 4 IP"
+    initial: "192.168.1.40"
+  led4_ha_availability_entity:
+    name: "LED 4 HA Availability Entity"
+    initial: ""
+  led4_event_entities:
+    name: "LED 4 Event Entities"
+    initial: ""
+
+  # LED 5 (R6)
+  led5_name:
+    name: "LED 5 Name"
+    initial: "Airport Express"
+  led5_ip:
+    name: "LED 5 IP"
+    initial: "192.168.1.20"
+  led5_ha_availability_entity:
+    name: "LED 5 HA Availability Entity"
+    initial: ""
+  led5_event_entities:
+    name: "LED 5 Event Entities"
+    initial: ""
+
+  # LED 6 (R7)
+  led6_name:
+    name: "LED 6 Name"
+    initial: "Eero"
+  led6_ip:
+    name: "LED 6 IP"
+    initial: "192.168.1.2"
+  led6_ha_availability_entity:
+    name: "LED 6 HA Availability Entity"
+    initial: ""
+  led6_event_entities:
+    name: "LED 6 Event Entities"
+    initial: ""
+
+  # LED 7 (R8)
+  led7_name:
+    name: "LED 7 Name"
+    initial: "Switch Link"
+  led7_ip:
+    name: "LED 7 IP"
+    initial: ""
+  led7_ha_availability_entity:
+    name: "LED 7 HA Availability Entity"
+    initial: ""
+  led7_event_entities:
+    name: "LED 7 Event Entities"
+    initial: ""
+
+  # LED 8 (S1)
+  led8_name:
+    name: "LED 8 Name"
+    initial: "Hue"
+  led8_ip:
+    name: "LED 8 IP"
+    initial: "192.168.1.80"
+  led8_ha_availability_entity:
+    name: "LED 8 HA Availability Entity"
+    initial: "binary_sensor.hue_bridge_available"
+  led8_event_entities:
+    name: "LED 8 Event Entities"
+    initial: ""
+
+  # LED 9 (S2)
+  led9_name:
+    name: "LED 9 Name"
+    initial: "Lutron"
+  led9_ip:
+    name: "LED 9 IP"
+    initial: "192.168.1.81"
+  led9_ha_availability_entity:
+    name: "LED 9 HA Availability Entity"
+    initial: "binary_sensor.lutron_bridge_available"
+  led9_event_entities:
+    name: "LED 9 Event Entities"
+    initial: ""
+
+  # LED 10 (S3)
+  led10_name:
+    name: "LED 10 Name"
+    initial: "Ikea"
+  led10_ip:
+    name: "LED 10 IP"
+    initial: "192.168.1.90"
+  led10_ha_availability_entity:
+    name: "LED 10 HA Availability Entity"
+    initial: ""
+  led10_event_entities:
+    name: "LED 10 Event Entities"
+    initial: ""
+
+  # LED 11 (S4)
+  led11_name:
+    name: "LED 11 Name"
+    initial: "Aqara"
+  led11_ip:
+    name: "LED 11 IP"
+    initial: "192.168.1.91"
+  led11_ha_availability_entity:
+    name: "LED 11 HA Availability Entity"
+    initial: ""
+  led11_event_entities:
+    name: "LED 11 Event Entities"
+    initial: ""
+
+  # LED 12 (S5)
+  led12_name:
+    name: "LED 12 Name"
+    initial: "Starling"
+  led12_ip:
+    name: "LED 12 IP"
+    initial: "192.168.1.92"
+  led12_ha_availability_entity:
+    name: "LED 12 HA Availability Entity"
+    initial: ""
+  led12_event_entities:
+    name: "LED 12 Event Entities"
+    initial: ""
+
+  # LED 13 (S6)
+  led13_name:
+    name: "LED 13 Name"
+    initial: "Home Assistant"
+  led13_ip:
+    name: "LED 13 IP"
+    initial: ""
+  led13_ha_availability_entity:
+    name: "LED 13 HA Availability Entity"
+    initial: "binary_sensor.homeassistant"
+  led13_event_entities:
+    name: "LED 13 Event Entities"
+    initial: ""
+
+  # LED 14 (S7) - MAPPED TO SNOW PLOWS
+  led14_name:
+    name: "LED 14 Name"
+    initial: "Snow Plows"
+  led14_ip:
+    name: "LED 14 IP"
+    initial: ""
+  led14_ha_availability_entity:
+    name: "LED 14 HA Availability Entity"
+    initial: "binary_sensor.plows_active_nearby"
+  led14_event_entities:
+    name: "LED 14 Event Entities"
+    initial: "sensor.snow_plow_status"
+
+  # LED 15 (S8) - MAPPED TO WATER USAGE
+  led15_name:
+    name: "LED 15 Name"
+    initial: "Water Usage"
+  led15_ip:
+    name: "LED 15 IP"
+    initial: ""
+  led15_ha_availability_entity:
+    name: "LED 15 HA Availability Entity"
+    initial: "binary_sensor.water_in_session"
+  led15_event_entities:
+    name: "LED 15 Event Entities"
+    initial: "sensor.water_flow_gpm"
+
+input_select:
+  # LED 0 (R1)
+  led0_type:
+    name: "LED 0 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "uplink"
+
+  # LED 1 (R2)
+  led1_type:
+    name: "LED 1 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "server"
+
+  # LED 2 (R3)
+  led2_type:
+    name: "LED 2 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "pihole"
+
+  # LED 3 (R4)
+  led3_type:
+    name: "LED 3 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "nas"
+
+  # LED 4 (R5)
+  led4_type:
+    name: "LED 4 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "server"
+
+  # LED 5 (R6)
+  led5_type:
+    name: "LED 5 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "bridge"
+
+  # LED 6 (R7)
+  led6_type:
+    name: "LED 6 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "router"
+
+  # LED 7 (R8)
+  led7_type:
+    name: "LED 7 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "uplink"
+
+  # LED 8 (S1)
+  led8_type:
+    name: "LED 8 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "bridge"
+
+  # LED 9 (S2)
+  led9_type:
+    name: "LED 9 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "bridge"
+
+  # LED 10 (S3)
+  led10_type:
+    name: "LED 10 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "bridge"
+
+  # LED 11 (S4)
+  led11_type:
+    name: "LED 11 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "bridge"
+
+  # LED 12 (S5)
+  led12_type:
+    name: "LED 12 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "bridge"
+
+  # LED 13 (S6)
+  led13_type:
+    name: "LED 13 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "server"
+
+  # LED 14 (S7) - Mapped to Snow (Service/Other)
+  led14_type:
+    name: "LED 14 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "other"
+
+  # LED 15 (S8) - Mapped to Water (Service/Other)
+  led15_type:
+    name: "LED 15 Type"
+    options: [uplink, server, bridge, pihole, switch, ap, nas, other]
+    initial: "other"
