@@ -1,0 +1,154 @@
+# Example Home Assistant entity-to-feature mapping.
+# Copy this file and trim it down to the devices that exist in your deployment.
+entities:
+  - id: climate.living_room
+    area: living_room
+    description: Ecobee thermostat
+    features:
+      temp_living:
+        type: numeric
+        normalize: {min: 60, max: 80}
+        smoothing_seconds: 120
+      humidity_living:
+        type: numeric
+        normalize: {min: 25, max: 70}
+        smoothing_seconds: 180
+      temp_deviation:
+        type: numeric
+        normalize: {min: -5, max: 5}
+        smoothing_seconds: 180
+      hvac_activity:
+        type: state_enum
+        mapping:
+          heating: 1.0
+          cooling: 0.8
+          idle: 0.0
+        smoothing_seconds: 60
+
+  - id: binary_sensor.living_room_motion
+    area: living_room
+    features:
+      motion_living_recent:
+        type: event_rate
+        window_seconds: 600
+        max_events: 12
+        event_state: "on"
+        smoothing_seconds: 60
+
+  - id: media_player.homepod_living_room
+    area: living_room
+    features:
+      media_is_playing:
+        type: state_enum
+        mapping:
+          playing: 1.0
+          paused: 0.0
+          idle: 0.0
+      media_loudness:
+        type: attribute
+        attribute: volume_level
+        normalize: {min: 0.0, max: 1.0}
+        smoothing_seconds: 30
+
+  - id: cover.ikea_blind_living_room
+    area: living_room
+    features:
+      blinds_open_ratio:
+        type: attribute
+        attribute: current_position
+        normalize: {min: 0, max: 100}
+        smoothing_seconds: 60
+
+  - id: sensor.eero_network_load
+    area: network
+    features:
+      net_load:
+        type: numeric
+        normalize: {min: 0.0, max: 1.0}
+        smoothing_seconds: 45
+      devices_online_ratio:
+        type: attribute
+        attribute: connected_devices_ratio
+        normalize: {min: 0.0, max: 1.0}
+        smoothing_seconds: 45
+
+  - id: sensor.eero_network_latency
+    area: network
+    features:
+      net_latency:
+        type: numeric
+        normalize: {min: 0, max: 80}
+        smoothing_seconds: 45
+
+  - id: sensor.flume_water_flow
+    area: utilities
+    features:
+      water_flow_now:
+        type: numeric
+        normalize: {min: 0, max: 6}
+        smoothing_seconds: 30
+
+  - id: sensor.flume_daily_total
+    area: utilities
+    features:
+      water_today:
+        type: numeric
+        normalize: {min: 0, max: 250}
+      resource_trend:
+        type: attribute
+        attribute: weekly_ratio
+        normalize: {min: 0.0, max: 1.0}
+
+  - id: binary_sensor.aqara_entry_leak
+    area: entry
+    features:
+      leak_alert:
+        type: binary
+        present_value: 1.0
+        absent_value: 0.0
+
+  - id: lock.level_front_door
+    area: entry
+    features:
+      front_door_locked:
+        type: state_enum
+        mapping:
+          locked: 0.0
+          unlocked: 1.0
+        smoothing_seconds: 10
+
+  - id: binary_sensor.garage_door_open
+    area: garage
+    features:
+      garage_open_recent:
+        type: event_rate
+        window_seconds: 900
+        max_events: 4
+        event_state: "on"
+
+  - id: sensor.outdoor_lux
+    area: exterior
+    features:
+      outdoor_lux:
+        type: numeric
+        normalize: {min: 0, max: 60000}
+        smoothing_seconds: 300
+      daylight_trend:
+        type: attribute
+        attribute: rolling_ratio
+        normalize: {min: 0.0, max: 1.0}
+
+  - id: sensor.clean_energy_index
+    area: utilities
+    features:
+      clean_energy_score:
+        type: numeric
+        normalize: {min: 0, max: 100}
+        smoothing_seconds: 300
+
+  - id: sensor.house_lighting_summary
+    area: global
+    features:
+      lights_on_ratio:
+        type: numeric
+        normalize: {min: 0, max: 1}

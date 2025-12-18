@@ -8,7 +8,29 @@
     "schema_version": {"type": "string"},
     "timestamp": {"type": "integer", "minimum": 0},
     "generated_at": {"type": "string", "format": "date-time"},
-    "context": {"type": "object", "additionalProperties": true},
+    "context": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "timestamp": {"type": "integer", "minimum": 0},
+        "daypart": {"type": "string"},
+        "entities": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "flags": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "occupied": {"type": "boolean"},
+            "rain_expected": {"type": "boolean"}
+          }
+        }
+      }
+    },
     "leds": {
       "type": "array",
       "items": {
@@ -17,6 +39,7 @@
         "additionalProperties": true,
         "properties": {
           "index": {"type": "integer", "minimum": 0},
+          "type": {"type": "string"},
           "health": {"type": "string"},
           "activity_level": {"type": "number", "minimum": 0},
           "activity_type": {"type": "string"}

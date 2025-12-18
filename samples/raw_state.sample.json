@@ -12,7 +12,17 @@
     {"entity_id": "sensor.home_event", "state": "ok"}
   ],
   "context": {
+    "timestamp": 1735689600,
     "daypart": "morning",
-    "occupied": true
+    "entities": {
+      "person.someone": {
+        "state": "home",
+        "attributes": {}
+      }
+    },
+    "flags": {
+      "occupied": true,
+      "rain_expected": false
+    }
   }
 }

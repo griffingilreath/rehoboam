@@ -127,6 +127,7 @@ class StateEngineService:
         for led in led_config.get("leds", []):
             index = led.get("index", 0)
             name = led.get("name") or f"LED {index}"
+            led_type = led.get("type") or "unknown"
             device_state = raw_state.get("devices", {}).get(name)
             led_state = self._per_led_state.setdefault(index, LedState(last_update=now))
             health = self._determine_health(led, device_state, raw_timestamp)
@@ -138,6 +139,7 @@ class StateEngineService:
             canonical_leds.append({
                 "index": index,
                 "name": name,
+                "type": led_type,
                 "health": health,
                 "activity_level": round(activity_level, 3),
                 "activity_type": activity_type,

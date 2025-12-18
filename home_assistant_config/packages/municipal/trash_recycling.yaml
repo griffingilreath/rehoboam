@@ -1,0 +1,174 @@
+############################################################
+# Trash & Recycling Package
+# Includes: Sensors, REST lookups, and Input Datetimes
+############################################################
+
+input_datetime:
+  last_garbage_pickup:
+    name: Last Garbage Pickup
+    has_date: true
+    has_time: false
+
+  last_recycling_pickup:
+    name: Last Recycling Pickup
+    has_date: true
+    has_time: false
+
+rest:
+  # --- Milwaukee garbage/recycling JSON fetch ---
+  - resource: !secret milwaukee_garbage_url
+    method: GET
+    scan_interval: 3600        # every hour
+    timeout: 30
+    sensor:
+      - name: "Milwaukee Sanitation"
+        unique_id: milwaukee_sanitation
+        value_template: "{{ value_json.success | default(false) }}"
+        json_attributes:
+          - garbage
+          - recycling
+
+template:
+  - binary_sensor:
+      # ---------------------------
+      # Pickup Today Sensors (driven by *_days sensors)
+      # ---------------------------
+      - name: Garbage Pickup Today
+        unique_id: garbage_pickup_today
+        state: >
+          {{ states('sensor.next_garbage_pickup_days')|int(99) == 0 }}
+
+      - name: Recycling Pickup Today
+        unique_id: recycling_pickup_today
+        state: >
+          {{ states('sensor.next_recycling_pickup_days')|int(99) == 0 }}
+
+  - sensor:
+      # ---------------------------
+      # Milwaukee Recycling Pickup (JSON)
+      # ---------------------------
+      - name: "Next Recycling Pickup"
+        unique_id: next_recycling_pickup
+        device_class: timestamp
+        state: >
+          {% set rec = state_attr('sensor.milwaukee_sanitation', 'recycling') %}
+          {% if rec and rec.get('date') %}
+            {% set date_str = rec['date']|trim %}
+            {% set dt = strptime(date_str, "%A %B %d, %Y") %}
+            {{ dt.replace(tzinfo=now().tzinfo).isoformat() }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      - name: "Next Recycling Pickup (days)"
+        unique_id: next_recycling_pickup_days
+        unit_of_measurement: "days"
+        state: >
+          {% set rec = state_attr('sensor.milwaukee_sanitation', 'recycling') %}
+          {% if rec and rec.get('date') %}
+            {% set dt = strptime(rec['date']|trim, "%A %B %d, %Y") %}
+            {{ (dt.date() - now().date()).days }}
+          {% else %}
+            0
+          {% endif %}
+
+      - name: "Recycling Route"
+        unique_id: recycling_route
+        state: >
+          {% set rec = state_attr('sensor.milwaukee_sanitation', 'recycling') %}
+          {% if rec and rec.get('route') %}
+            {{ rec['route'] }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      # Last Recycling Pickup (from input_datetime)
+      - name: "Last Recycling Pickup"
+        unique_id: last_recycling_pickup
+        device_class: timestamp
+        state: >
+          {% set d = states('input_datetime.last_recycling_pickup') %}
+          {% if d not in ['unknown','unavailable',''] and d != '' %}
+            {{ as_datetime(d).replace(tzinfo=now().tzinfo).isoformat() }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      # ---------------------------
+      # Milwaukee Garbage Pickup (JSON)
+      # ---------------------------
+      - name: "Next Garbage Pickup"
+        unique_id: next_garbage_pickup
+        device_class: timestamp
+        state: >
+          {% set garb = state_attr('sensor.milwaukee_sanitation', 'garbage') %}
+          {% if garb and garb.get('date') %}
+            {% set date_str = garb['date']|trim %}
+            {% set dt = strptime(date_str, "%A %B %d, %Y") %}
+            {{ dt.replace(tzinfo=now().tzinfo).isoformat() }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      - name: "Next Garbage Pickup (days)"
+        unique_id: next_garbage_pickup_days
+        unit_of_measurement: "days"
+        state: >
+          {% set garb = state_attr('sensor.milwaukee_sanitation', 'garbage') %}
+          {% if garb and garb.get('date') %}
+            {% set dt = strptime(garb['date']|trim, "%A %B %d, %Y") %}
+            {{ (dt.date() - now().date()).days }}
+          {% else %}
+            0
+          {% endif %}
+
+      - name: "Garbage Route"
+        unique_id: garbage_route
+        state: >
+          {% set garb = state_attr('sensor.milwaukee_sanitation', 'garbage') %}
+          {% if garb and garb.get('route') %}
+            {{ garb['route'] }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      # Last Garbage Pickup (from input_datetime)
+      - name: "Last Garbage Pickup"
+        unique_id: last_garbage_pickup
+        device_class: timestamp
+        state: >
+          {% set d = states('input_datetime.last_garbage_pickup') %}
+          {% if d not in ['unknown','unavailable',''] and d != '' %}
+            {{ as_datetime(d).replace(tzinfo=now().tzinfo).isoformat() }}
+          {% else %}
+            unknown
+          {% endif %}
+
+automation:
+  - id: update_last_garbage_pickup
+    alias: Trash · Update last garbage pickup date
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >
+          {{ states('sensor.next_garbage_pickup_days')|int(99) == 0 }}
+    action:
+      - service: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.last_garbage_pickup
+        data:
+          date: "{{ now().date().isoformat() }}"
+
+  - id: update_last_recycling_pickup
+    alias: Trash · Update last recycling pickup date
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >
+          {{ states('sensor.next_recycling_pickup_days')|int(99) == 0 }}
+    action:
+      - service: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.last_recycling_pickup
+        data:
+          date: "{{ now().date().isoformat() }}"

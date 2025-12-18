@@ -1,0 +1,38 @@
+###############################################################################
+# PACKAGE: BASEMENT
+#
+# Rooms:
+#   - Basement Storage
+#   - Basement Bath
+#   - Utility Area
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# SENSORS (Leak Detection is critical here)
+# -----------------------------------------------------------------------------
+binary_sensor:
+  - platform: group
+    name: "Basement Leaks"
+    device_class: moisture
+    entities:
+      # - binary_sensor.water_heater_leak
+      # - binary_sensor.sump_pump_leak
+
+# -----------------------------------------------------------------------------
+# AUTOMATIONS
+# -----------------------------------------------------------------------------
+automation:
+  - alias: "[Basement] Leak Detected Alert"
+    id: basement_leak_alert
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.basement_leaks
+        to: "on"
+    action:
+      - service: notify.notify
+        data:
+          title: "CRITICAL: LEAK IN BASEMENT"
+          message: "Water detected in basement sensors!"
+      # Turn off water main if you have a smart valve
+      # - service: switch.turn_off
+      #   entity_id: switch.main_water_valve

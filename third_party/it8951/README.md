@@ -1,6 +1,6 @@
 # third_party/it8951
 
-Reference snapshot location for IT8951 tooling and drivers used by the e-paper stack.
+Reference snapshot location for IT8951 tooling and drivers used by the e-paper stack. See [`docs/it8951_driver_playbook.md`](../../docs/it8951_driver_playbook.md) for a full Pi setup guide; this README focuses on how to populate the `third_party` tree so the repo stays self-contained.
 
 ## Suggested layout
 
@@ -36,4 +36,18 @@ Document any local tweaks by adding patch files under `patches/` (e.g., `0001-Re
 - Makes it obvious which code is upstream vs. maintained by this repo.
 - Keeps firmware/e-paper history clean while still providing a canonical place to store licensed dependencies.
 - Encourages periodic updates (update the submodule pointer or re-clone) instead of editing vendored code in place.
+
+## Quick install snippets
+
+```bash
+# Build + install USB helper
+cd third_party/it8951/waveshare/it8951usb
+make it8951usb
+install -m 755 it8951usb ../../../../bin/it8951usb
+
+# Install the Python SPI driver directly from source
+pip install third_party/it8951/gregdmeyer
+```
+
+> The Greg Meyer driver is not published on PyPI; installing from the local clone keeps CI happy and lets you patch it if needed.
 
