@@ -15,7 +15,7 @@ Collects raw device telemetry (reachability, Home Assistant availability, Pi-hol
 
 ## Prerequisites
 
-- Python 3.9+ and `pip install -r jetson/requirements.txt` (needs `requests`, `PyYAML`, `websocket-client`).
+- Python 3.9+ and `pip install -r jetson/requirements.txt` (needs `requests`, `PyYAML`, `websocket-client`, `pydantic`).
 - `config_sync_service` already producing `data/led_config.json`.
 - Home Assistant long-lived token and reachable base URL.
 - Optional Pi-hole API token (recommended) if monitoring Pi-hole devices.
@@ -128,10 +128,12 @@ python jetson/collector_service/main.py \
 
 ## Operational Notes & Tips
 
+- **Strict Validation**: Configuration is now validated with Pydantic. Missing required fields or invalid types will cause the service to exit immediately with a clear error message.
 - The service reloads `led_config.json` every cycle so edits in Home Assistant propagate immediately.
 - Writes to `raw_state.json` are atomic (tmp file + rename) to avoid partially-written files for downstream readers.
 - When Home Assistant or Pi-hole calls fail, warnings are logged and the previous values stay untouched; this prevents flapping states.
-- Event streaming uses HA's websocket API. If HA restarts, the service automatically reconnects with exponential backoff controlled by `events.reconnect_delay_seconds`.
+- Event streaming uses HA's websocket API. If HA restarts, the service automatically reconnects with exponential backoff (starting at `events.reconnect_delay_seconds` and doubling up to 5 minutes).
+- **Memory Safety**: The internal event buffer is capped at 2000 events to prevent memory leaks during prolonged disk write failures.
 - `events_last_window` counts only the entity IDs explicitly listed in `event_entities`. Leave the field blank if you don't care about event-driven activity for that LED.
 - Pi-hole `blocked_ratio` is computed as `ads_blocked_today / max(dns_queries_today, 1)` to avoid divide-by-zero.
 - `ping` behavior adapts to Windows vs. POSIX automatically; ensure ICMP is allowed in your network policies.

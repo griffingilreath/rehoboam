@@ -50,6 +50,8 @@ cp epaper/config.example.yaml epaper/config.yaml
 python -m epaper.service.main --config epaper/config.yaml
 ```
 
+**Note**: The service runner supports standard flags like `--log-level` and `--data-dir`, consistent with other Jetson services.
+
 ## IT8951 Setup
 
 If you need a cradle-to-grave guide for Raspberry Pi prep, driver compilation, udev rules, and hardware tuning, see [`docs/it8951_driver_playbook.md`](../docs/it8951_driver_playbook.md). The playbook covers Pi 3B+ vs 4/5 recommendations, SPI overlay tweaks, udev rules, and a migration checklist.
