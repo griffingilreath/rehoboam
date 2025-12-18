@@ -50,6 +50,8 @@ cp epaper/config.example.yaml epaper/config.yaml
 python -m epaper.service.main --config epaper/config.yaml
 ```
 
+**Note**: The service runner supports standard flags like `--log-level` and `--data-dir`, consistent with other Jetson services.
+
 ## IT8951 Setup
 
 ### SPI backend
