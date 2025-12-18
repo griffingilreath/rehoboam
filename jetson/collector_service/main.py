@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import urlparse
-
 import aiohttp
 import requests
 import websocket

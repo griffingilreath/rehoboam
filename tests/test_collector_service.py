@@ -1,6 +1,5 @@
 import json
 import unittest
-import asyncio
 from unittest.mock import MagicMock, AsyncMock
 from pathlib import Path
 

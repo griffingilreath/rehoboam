@@ -1,7 +1,6 @@
 import json
 import unittest
-import asyncio
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 from pathlib import Path
 
 import yaml

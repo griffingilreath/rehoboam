@@ -11,10 +11,9 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 
 import aiohttp
-import requests
 import yaml
 
 from jetson.common.json_store import atomic_write_json
