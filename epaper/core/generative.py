@@ -1,7 +1,7 @@
 import random
 import math
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 class GenerativeAlgorithms:
     """
@@ -91,7 +91,7 @@ class GenerativeAlgorithms:
         # but pure line art needs Front-to-Back with a horizon check.
         
         # We'll map screen X coordinates to this array.
-        horizon = [bh + by] * int(bw) 
+        # horizon = [bh + by] * int(bw) 
         
         # Parameters for projection
         x_step = bw / steps
