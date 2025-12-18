@@ -24,11 +24,8 @@ DEFAULT_CONFIG_PATH = "jetson/ml_service/config.yaml"
 DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
 DEFAULT_HISTORY_FILENAME = "history.json"
 DEFAULT_OUTPUT_FILENAME = "divergence.json"
-<<<<<<< HEAD
 DEFAULT_FEEDBACK_FILENAME = "feedback.json"
-=======
 DEFAULT_FEATURES_FILENAME = "features.json"
->>>>>>> origin/main
 DIVERGENCE_SCHEMA_VERSION = "1.0"
 RECOMMENDATIONS_STATE_SCHEMA_VERSION = "1.0"
 FEATURES_SCHEMA_VERSION = "1.0"
@@ -57,9 +54,6 @@ class ServiceConfig:
     history_window_seconds: int
     baseline_days: int
     zscore_threshold: float
-<<<<<<< HEAD
-    feedback_filename: str = DEFAULT_FEEDBACK_FILENAME
-=======
     baseline_bucket: str = "global"  # "global" | "daypart"
     baseline_method: str = "standard"  # "standard" (mean/pstdev) | "robust" (median/MAD)
     score_method: str = "max"  # "max" | "weighted_mean"
@@ -75,7 +69,7 @@ class ServiceConfig:
     model_type: str = "isolation_forest"
     model_path: Path | None = None
     model_metadata_path: Path | None = None
->>>>>>> origin/main
+    feedback_filename: str = DEFAULT_FEEDBACK_FILENAME
     log_level: str = "INFO"
 
     @property
@@ -91,17 +85,16 @@ class ServiceConfig:
         return self.data_dir / self.output_filename
 
     @property
-<<<<<<< HEAD
     def feedback_path(self) -> Path:
         return self.data_dir / self.feedback_filename
-=======
+
+    @property
     def recommendations_state_path(self) -> Path:
         return self.data_dir / self.recommendations_state_filename
 
     @property
     def features_path(self) -> Path:
         return self.data_dir / self.features_output_filename
->>>>>>> origin/main
 
 
 class DivergenceModel:
@@ -726,9 +719,6 @@ class MlService:
             logging.warning("No history available yet; skipping cycle")
             return
         score = self._model.score(history)
-<<<<<<< HEAD
-        feedback_summary = self._summarize_feedback()
-=======
         raw_recs = self._recs.generate(latest=history[-1], history=history, metrics=score.get("metrics"))
         now = int(time.time())
         state = self._rec_state.load()
@@ -742,7 +732,7 @@ class MlService:
         if self._config.model_enabled:
             vector = self._features.vector_from_entry(history[-1])
             model_info = self._model_runner.infer(vector)
->>>>>>> origin/main
+        feedback_summary = self._summarize_feedback()
         payload = {
             "schema_version": DIVERGENCE_SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -750,16 +740,12 @@ class MlService:
             "score": score["score"],
             "level": score["level"],
             "metrics": score["metrics"],
-<<<<<<< HEAD
-            "recommendations": score.get("recommendations", []),
-            "feedback_summary": feedback_summary,
-=======
             "recommendations": recommendations,
             "baseline": score.get("baseline", {}),
             "score_max_z": score.get("score_max_z"),
             "scoring": score.get("scoring", {}),
             "model": model_info,
->>>>>>> origin/main
+            "feedback_summary": feedback_summary,
         }
         self._write_output(payload)
         self._health.mark_running(self._identity)

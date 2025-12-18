@@ -27,13 +27,10 @@ DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
 DEFAULT_HISTORY_FILENAME = "history.json"
 DEFAULT_HEALTH_FILENAME = "service_health.json"
 DEFAULT_DIVERGENCE_FILENAME = "divergence.json"
-<<<<<<< HEAD
 DEFAULT_COGNITION_FILENAME = "cognition.json"
 DEFAULT_AI_RECOMMENDATIONS_FILENAME = "ai_recommendations.json"
 DEFAULT_FEEDBACK_FILENAME = "feedback.json"
-=======
 DEFAULT_RECOMMENDATIONS_STATE_FILENAME = "recommendations_state.json"
->>>>>>> origin/main
 
 
 @dataclass
@@ -44,13 +41,10 @@ class ServiceConfig:
     history_filename: str = DEFAULT_HISTORY_FILENAME
     health_filename: str = DEFAULT_HEALTH_FILENAME
     divergence_filename: str = DEFAULT_DIVERGENCE_FILENAME
-<<<<<<< HEAD
     cognition_filename: str = DEFAULT_COGNITION_FILENAME
     ai_recommendations_filename: str = DEFAULT_AI_RECOMMENDATIONS_FILENAME
     feedback_filename: str = DEFAULT_FEEDBACK_FILENAME
-=======
     recommendations_state_filename: str = DEFAULT_RECOMMENDATIONS_STATE_FILENAME
->>>>>>> origin/main
     host: str = "0.0.0.0"
     port: int = 8000
     reload: bool = False
@@ -79,7 +73,6 @@ class ServiceConfig:
         return self.data_dir / self.divergence_filename
 
     @property
-<<<<<<< HEAD
     def cognition_path(self) -> Path:
         return self.data_dir / self.cognition_filename
 
@@ -90,7 +83,8 @@ class ServiceConfig:
     @property
     def feedback_path(self) -> Path:
         return self.data_dir / self.feedback_filename
-=======
+
+    @property
     def recommendations_state_path(self) -> Path:
         return self.data_dir / self.recommendations_state_filename
 
@@ -98,7 +92,6 @@ class ServiceConfig:
 class RecommendationUpdate(BaseModel):
     status: str
     details: Dict[str, Any] | None = None
->>>>>>> origin/main
 
 
 class JsonFileCache:
@@ -174,6 +167,7 @@ def create_app(config: ServiceConfig) -> FastAPI:
                 "led_config": str(config.led_config_path),
                 "history": str(config.history_path),
                 "divergence": str(config.divergence_path),
+                "recommendations_state": str(config.recommendations_state_path),
                 "cognition": str(config.cognition_path),
                 "ai_recommendations": str(config.ai_recommendations_path),
                 "feedback": str(config.feedback_path),
@@ -199,7 +193,6 @@ def create_app(config: ServiceConfig) -> FastAPI:
             "recommendations": recommendations,
         }
 
-<<<<<<< HEAD
     @app.get("/cognition", summary="External orchestrator cognition feed (agents/decisions/approvals)")
     def get_cognition() -> Dict[str, Any]:
         data = cache.read(config.cognition_path, allow_empty=True)
@@ -237,7 +230,6 @@ def create_app(config: ServiceConfig) -> FastAPI:
             "timestamp": max(int(ml.get("timestamp") or 0), int(ai.get("timestamp") or 0)),
             "recommendations": merged,
         }
-=======
     @app.post("/recommendations/{rec_id}", summary="Acknowledge/override a recommendation status")
     def set_recommendation_status(rec_id: str, update: RecommendationUpdate) -> Dict[str, Any]:
         normalized = (update.status or "").strip().lower()
@@ -271,7 +263,6 @@ def create_app(config: ServiceConfig) -> FastAPI:
 
         atomic_write_json(path, existing)
         return {"id": rec_id, "status": normalized}
->>>>>>> origin/main
 
     return app
 
@@ -296,13 +287,10 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
         cors_origins=data.get("cors_origins", []),
         cache_ttl_seconds=float(data.get("cache_ttl_seconds", 0.5)),
         divergence_filename=data.get("divergence_filename", DEFAULT_DIVERGENCE_FILENAME),
-<<<<<<< HEAD
         cognition_filename=data.get("cognition_filename", DEFAULT_COGNITION_FILENAME),
         ai_recommendations_filename=data.get("ai_recommendations_filename", DEFAULT_AI_RECOMMENDATIONS_FILENAME),
         feedback_filename=data.get("feedback_filename", DEFAULT_FEEDBACK_FILENAME),
-=======
         recommendations_state_filename=data.get("recommendations_state_filename", DEFAULT_RECOMMENDATIONS_STATE_FILENAME),
->>>>>>> origin/main
         log_level=log_level,
     )
 
