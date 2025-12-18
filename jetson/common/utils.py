@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 
 def wait_for_next_cycle(start_time: float, interval_seconds: float) -> None:

@@ -171,44 +171,44 @@ def show_config_summary(existing_env: dict[str, str], existing_api: dict, existi
     
     # Global Data Dir (inferred from api config)
     data_dir = existing_api.get("data_dir", "./data")
-    print(f"\nSystem:")
+    print("\nSystem:")
     print(f"  Data Directory: {data_dir}")
     
     # Home Assistant
     ha_url = existing_env.get("HA_BASE_URL", "Not configured")
     ha_token = "✓ Set" if existing_env.get("HA_TOKEN") else "✗ Not set"
-    print(f"\nHome Assistant:")
+    print("\nHome Assistant:")
     print(f"  URL: {ha_url}")
     print(f"  Token: {ha_token}")
     
     # Pi-hole
     pihole_url = existing_env.get("PIHOLE_BASE_URL", "Not configured")
     pihole_token = "✓ Set" if existing_env.get("PIHOLE_TOKEN") else "✗ Not set"
-    print(f"\nPi-hole:")
+    print("\nPi-hole:")
     print(f"  URL: {pihole_url}")
     print(f"  Token: {pihole_token}")
     
     # API Service
     api_port = existing_api.get("port", "Not configured")
     cors_origins = existing_api.get("cors_origins", [])
-    print(f"\nAPI Service:")
+    print("\nAPI Service:")
     print(f"  Port: {api_port}")
     print(f"  CORS Origins: {', '.join(cors_origins) if cors_origins else 'None'}")
     
     # ML Service
     zscore = existing_ml.get("zscore_threshold", "2.5 (Default)")
-    print(f"\nML Service:")
+    print("\nML Service:")
     print(f"  Sensitivity (Z-Score): {zscore}")
     
     # LED Encoder
     serial_dev = existing_led.get("serial_device", "Not configured")
-    print(f"\nLED Encoder:")
+    print("\nLED Encoder:")
     print(f"  Serial Device: {serial_dev}")
     
     # E-paper
     if existing_epaper:
         backend = existing_epaper.get("backend", "Not configured")
-        print(f"\nE-paper:")
+        print("\nE-paper:")
         print(f"  Backend: {backend}")
     
     print("="*60 + "\n")
@@ -334,7 +334,7 @@ def configure_system_storage(existing_api: dict) -> None:
         print("\n" + "-"*40)
         print("Run this command to create the environment file:")
         print("-" * 40)
-        print(f"sudo tee /etc/rehoboam.env <<EOF")
+        print("sudo tee /etc/rehoboam.env <<EOF")
         print(f"REHOBOAM_HOME={repo_path}")
         print(f"REHOBOAM_VENV={venv_path}")
         print(f"REHOBOAM_DATA={data_path}")
