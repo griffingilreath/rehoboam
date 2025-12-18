@@ -34,6 +34,11 @@ void ProtocolController::handleLine(const String &line, uint32_t now) {
         return;
     }
 
+    if (line.startsWith("{")) {
+        // TODO: Handle JSON frame
+        return;
+    }
+
     if (line.startsWith("STATE:")) {
         const String stateVal = line.substring(6);
         if (stateVal == "LIVE") {
