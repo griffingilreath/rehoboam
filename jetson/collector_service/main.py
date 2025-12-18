@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import platform
@@ -31,6 +32,8 @@ DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_EVENTS_LOG_FILENAME = "events.json"
 RAW_STATE_SCHEMA_VERSION = "1.0"
+
+
 class EventLogWriter:
     """Persist recent detailed events for dashboards/e-paper scenes."""
 
@@ -408,6 +411,7 @@ class CollectorService:
         self._stop_requested = False
         self._health = ServiceHealthTracker(config.data_dir)
         self._identity = ServiceIdentity(name="collector_service")
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=20)
 
     def _start_event_stream(self) -> Optional[HomeAssistantEventStream]:
         if not self._config.events.enabled:
@@ -429,6 +433,7 @@ class CollectorService:
     def request_stop(self, *_: Any) -> None:
         logging.info("Stop requested; finishing current cycle")
         self._stop_requested = True
+        self._executor.shutdown(wait=False)
         if self._event_stream:
             self._event_stream.stop()
 
@@ -453,11 +458,27 @@ class CollectorService:
         if not led_config:
             logging.warning("No led_config.json available yet; skipping cycle")
             return
+        
+        # Parallelize device collection
         devices: Dict[str, Dict[str, Any]] = {}
+        futures_to_name = {}
+        
         for led in led_config.get("leds", []):
             name = led.get("name") or f"LED {led.get('index', '?')}"
-            devices[name] = self._collect_device_state(led)
-        context_snapshot = self._build_context_snapshot()
+            future = self._executor.submit(self._collect_device_state, led)
+            futures_to_name[future] = name
+
+        for future in concurrent.futures.as_completed(futures_to_name):
+            name = futures_to_name[future]
+            try:
+                devices[name] = future.result()
+            except Exception as exc:
+                logging.error("Failed to collect state for %s: %s", name, exc)
+                devices[name] = {}
+
+        # Parallelize context entity fetching
+        context_snapshot = self._build_context_snapshot_parallel()
+        
         payload = {
             "schema_version": RAW_STATE_SCHEMA_VERSION,
             "timestamp": int(time.time()),
@@ -527,24 +548,38 @@ class CollectorService:
             self._event_archive.clear()
         self._event_log_writer.append_many(batch)
 
-    def _build_context_snapshot(self) -> Dict[str, Any]:
+    def _build_context_snapshot_parallel(self) -> Dict[str, Any]:
         snapshot: Dict[str, Any] = {
             "timestamp": int(time.time()),
             "daypart": self._derive_daypart(),
             "entities": {},
         }
         flags = {"occupied": False, "rain_expected": False}
-        for entity_id in self._context_entities:
-            state_obj = self._ha.read_state(entity_id)
-            if not state_obj:
-                continue
-            snapshot["entities"][entity_id] = {
-                "state": state_obj.get("state"),
-                "attributes": state_obj.get("attributes", {}),
-            }
-            self._update_flags_from_entity(flags, entity_id, state_obj)
+        
+        futures = {
+            self._executor.submit(self._ha.read_state, entity_id): entity_id 
+            for entity_id in self._context_entities
+        }
+        
+        for future in concurrent.futures.as_completed(futures):
+            entity_id = futures[future]
+            try:
+                state_obj = future.result()
+                if state_obj:
+                    snapshot["entities"][entity_id] = {
+                        "state": state_obj.get("state"),
+                        "attributes": state_obj.get("attributes", {}),
+                    }
+                    self._update_flags_from_entity(flags, entity_id, state_obj)
+            except Exception as exc:
+                logging.error("Failed to fetch context entity %s: %s", entity_id, exc)
+                
         snapshot["flags"] = flags
         return snapshot
+        
+    def _build_context_snapshot(self) -> Dict[str, Any]:
+        # Legacy serial method kept for reference/fallback if needed
+        return self._build_context_snapshot_parallel()
 
     @staticmethod
     def _derive_daypart() -> str:

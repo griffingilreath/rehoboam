@@ -34,5 +34,11 @@ struct StateTransitionContext {
     PriorityState priorityState;
 };
 
+struct LedState {
+    uint8_t healthCode{0};    // 0=OK, 1=WARN, 2=ERR, 3=OFF, 4=UNK
+    float activityLevel{0.0f}; // 0.0 - 1.0
+    uint8_t activityType{0};   // 0=NONE, 1=LIGHT, 2=DNS, 3=BLIND, 4=GENERIC
+};
+
 } // namespace controllers
 } // namespace ledpanel
