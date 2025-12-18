@@ -209,7 +209,7 @@ class ConfigSyncService:
                 continue
             entity_id = template.format(index=index)
             field_names.append((field_name, entity_id))
-            field_tasks.append(self._client.read_entity_state_async(session, entity_id))
+            field_tasks.append(self._client.read_state_async(session, entity_id))
             
         if field_tasks:
             values_list = await asyncio.gather(*field_tasks)
@@ -228,7 +228,7 @@ class ConfigSyncService:
             if not template:
                 continue
             entity_id = template.format(index=index)
-            value = self._client.read_entity_state(entity_id)
+            value = self._client.read_state(entity_id)
             if isinstance(value, dict):
                 value = value.get("state")
             if value is None:

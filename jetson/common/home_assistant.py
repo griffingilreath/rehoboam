@@ -53,6 +53,26 @@ class HomeAssistantClient:
             return None
         return response.json()
 
+    def read_entity_state(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        """Alias for read_state."""
+        return self.read_state(entity_id)
+        """Synchronous fetch of entity state."""
+        url = f"{self._base_url}/api/states/{entity_id}"
+        try:
+            response = self._session.get(url, timeout=self._config.timeout_seconds)
+        except requests.RequestException as exc:
+            logging.warning("HA request failed for %s: %s", entity_id, exc)
+            return None
+        if response.status_code == 404:
+            logging.debug("HA entity %s not found", entity_id)
+            return None
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            logging.error("HA error for %s: %s", entity_id, exc)
+            return None
+        return response.json()
+
     async def read_state_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[Dict[str, Any]]:
         """Asynchronous fetch of entity state."""
         url = f"{self._base_url}/api/states/{entity_id}"
@@ -76,6 +96,10 @@ class HomeAssistantClient:
         except Exception as exc:
             logging.warning("HA request failed for %s: %s", entity_id, exc)
             return None
+
+    async def read_entity_state_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[Dict[str, Any]]:
+        """Alias for read_state_async."""
+        return await self.read_state_async(session, entity_id)
 
     def is_available(self, entity_id: str) -> Optional[bool]:
         state = self.read_state(entity_id)

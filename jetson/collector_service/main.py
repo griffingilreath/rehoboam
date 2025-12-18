@@ -477,8 +477,11 @@ class CollectorService:
                 if isinstance(result, Exception):
                     logging.error("Failed to collect state for %s: %s", name, result)
                     devices[name] = {}
-                else:
+                elif isinstance(result, dict):
                     devices[name] = result
+                else:
+                    logging.error("Unexpected result type for %s: %s", name, type(result))
+                    devices[name] = {}
         
         # Build context snapshot (async)
         context_snapshot = await self._build_context_snapshot_async(session)
@@ -542,7 +545,9 @@ class CollectorService:
             
             if "ping" in results_map:
                 res = results_map["ping"]
-                if not isinstance(res, Exception):
+                if isinstance(res, Exception):
+                    logging.warning("Ping failed: %s", res)
+                elif isinstance(res, tuple):
                     reachable, rtt_ms = res
                     result["reachable"] = reachable
                     if rtt_ms is not None:
@@ -550,12 +555,16 @@ class CollectorService:
             
             if "ha" in results_map:
                 res = results_map["ha"]
-                if not isinstance(res, Exception) and res is not None:
+                if isinstance(res, Exception):
+                    logging.warning("HA check failed: %s", res)
+                elif isinstance(res, bool):
                     result["ha_available"] = res
 
             if "pihole" in results_map:
                 summary = results_map["pihole"]
-                if not isinstance(summary, Exception) and summary:
+                if isinstance(summary, Exception):
+                    logging.warning("Pi-hole check failed: %s", summary)
+                elif isinstance(summary, dict):
                     result["qps"] = summary.get("queries_last_minute", 0) / 60.0
                     blocked = summary.get("ads_blocked_today", 0)
                     total = summary.get("dns_queries_today", 0) or 1
@@ -615,11 +624,13 @@ class CollectorService:
             for entity_id, state_obj in zip(self._context_entities, results):
                 if isinstance(state_obj, Exception) or not state_obj:
                     continue
-                snapshot["entities"][entity_id] = {
-                    "state": state_obj.get("state"),
-                    "attributes": state_obj.get("attributes", {}),
-                }
-                self._update_flags_from_entity(flags, entity_id, state_obj)
+                # Ensure state_obj is a dict before access
+                if isinstance(state_obj, dict):
+                    snapshot["entities"][entity_id] = {
+                        "state": state_obj.get("state"),
+                        "attributes": state_obj.get("attributes", {}),
+                    }
+                    self._update_flags_from_entity(flags, entity_id, state_obj)
         
         snapshot["flags"] = flags
         return snapshot

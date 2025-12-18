@@ -13,10 +13,10 @@ class FakeHAClient:
     def __init__(self, values):
         self._values = values
 
-    def read_entity_state(self, entity_id: str) -> str:
+    def read_state(self, entity_id: str) -> str:
         return self._values.get(entity_id, f"value-for-{entity_id}")
         
-    async def read_entity_state_async(self, session, entity_id: str):
+    async def read_state_async(self, session, entity_id: str):
         val = self._values.get(entity_id, f"value-for-{entity_id}")
         return {"state": val}
 
