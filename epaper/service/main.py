@@ -40,7 +40,6 @@ class EpaperService:
             self._shutdown_panel()
             return
 
-        self._manager.start()
         try:
             self._run_scene()
         finally:
