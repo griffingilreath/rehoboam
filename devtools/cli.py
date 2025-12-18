@@ -196,7 +196,7 @@ Examples:
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
     
     # Status command (default)
-    status_parser = subparsers.add_parser("status", help="Show current system status (default)")
+    subparsers.add_parser("status", help="Show current system status (default)")
     
     # Export HA config command
     export_parser = subparsers.add_parser(

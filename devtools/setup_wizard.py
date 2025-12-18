@@ -34,7 +34,6 @@ import yaml
 try:
     import requests
     from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
 except ImportError:
     # Requests is required for validation but script can run without it
     requests = None
