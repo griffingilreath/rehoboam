@@ -14,9 +14,11 @@ from typing import Any, Dict, Optional
 import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from jetson.common.service_runner import RunnerOverrides, run_service
+from jetson.common.json_store import atomic_write_json
 
 
 DEFAULT_CONFIG_PATH = "jetson/api_service/config.yaml"
@@ -25,6 +27,7 @@ DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
 DEFAULT_HISTORY_FILENAME = "history.json"
 DEFAULT_HEALTH_FILENAME = "service_health.json"
 DEFAULT_DIVERGENCE_FILENAME = "divergence.json"
+DEFAULT_RECOMMENDATIONS_STATE_FILENAME = "recommendations_state.json"
 
 
 @dataclass
@@ -35,6 +38,7 @@ class ServiceConfig:
     history_filename: str = DEFAULT_HISTORY_FILENAME
     health_filename: str = DEFAULT_HEALTH_FILENAME
     divergence_filename: str = DEFAULT_DIVERGENCE_FILENAME
+    recommendations_state_filename: str = DEFAULT_RECOMMENDATIONS_STATE_FILENAME
     host: str = "0.0.0.0"
     port: int = 8000
     reload: bool = False
@@ -61,6 +65,15 @@ class ServiceConfig:
     @property
     def divergence_path(self) -> Path:
         return self.data_dir / self.divergence_filename
+
+    @property
+    def recommendations_state_path(self) -> Path:
+        return self.data_dir / self.recommendations_state_filename
+
+
+class RecommendationUpdate(BaseModel):
+    status: str
+    details: Dict[str, Any] | None = None
 
 
 class JsonFileCache:
@@ -158,6 +171,40 @@ def create_app(config: ServiceConfig) -> FastAPI:
             "recommendations": recommendations,
         }
 
+    @app.post("/recommendations/{rec_id}", summary="Acknowledge/override a recommendation status")
+    def set_recommendation_status(rec_id: str, update: RecommendationUpdate) -> Dict[str, Any]:
+        normalized = (update.status or "").strip().lower()
+        if normalized not in {"pending", "applied", "ignored"}:
+            raise HTTPException(status_code=400, detail="status must be pending|applied|ignored")
+
+        path = config.recommendations_state_path
+        if path.exists():
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                existing = {}
+        else:
+            existing = {}
+        if not isinstance(existing, dict):
+            existing = {}
+        existing.setdefault("schema_version", "1.0")
+        items = existing.setdefault("items", {})
+        if not isinstance(items, dict):
+            items = {}
+            existing["items"] = items
+
+        entry = items.get(rec_id)
+        if not isinstance(entry, dict):
+            entry = {}
+            items[rec_id] = entry
+        entry["status"] = normalized
+        entry["updated_at"] = time.time()
+        if update.details:
+            entry["details"] = update.details
+
+        atomic_write_json(path, existing)
+        return {"id": rec_id, "status": normalized}
+
     return app
 
 
@@ -181,6 +228,7 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
         cors_origins=data.get("cors_origins", []),
         cache_ttl_seconds=float(data.get("cache_ttl_seconds", 0.5)),
         divergence_filename=data.get("divergence_filename", DEFAULT_DIVERGENCE_FILENAME),
+        recommendations_state_filename=data.get("recommendations_state_filename", DEFAULT_RECOMMENDATIONS_STATE_FILENAME),
         log_level=log_level,
     )
 
