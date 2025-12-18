@@ -218,8 +218,10 @@ class NotificationService:
     def _recently_sent(self, sent_map: Dict[str, Any], rec_id: str, now: int) -> bool:
         entry = sent_map.get(rec_id) or {}
         last = entry.get("last_sent")
+        if not isinstance(last, (int, float, str)):
+            return False
         try:
-            last_i = int(last)
+            last_i = int(float(last))
         except (TypeError, ValueError):
             return False
         return (now - last_i) < self._config.min_resend_seconds

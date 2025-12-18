@@ -150,9 +150,9 @@ class CognitionService:
         atomic_write_json(self._config.cognition_path, cognition_payload)
         details["wrote_cognition"] = True
         details["counts"] = {
-            "agents": len(cognition_payload["agents"]),
-            "decisions": len(cognition_payload["decisions"]),
-            "approvals": len(cognition_payload["approvals"]),
+            "agents": len(agents) if isinstance(agents, list) else 0,
+            "decisions": len(decisions) if isinstance(decisions, list) else 0,
+            "approvals": len(approvals) if isinstance(approvals, list) else 0,
         }
 
         if not self._config.suggestions.enabled:
