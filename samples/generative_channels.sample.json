@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2025-12-08T18:14:30Z",
+  "house_activity": 0.64,
+  "soundscape": 0.28,
+  "daylight": 0.91,
+  "comfort": 0.42,
+  "resource_use": 0.33,
+  "network_health": 0.51,
+  "security_tension": 0.12,
+  "long_term_drift": 0.77
+}

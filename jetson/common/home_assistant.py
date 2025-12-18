@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from pydantic import BaseModel
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
@@ -11,8 +11,7 @@ import aiohttp
 import requests
 
 
-@dataclass
-class HomeAssistantConfig:
+class HomeAssistantConfig(BaseModel):
     base_url: str
     token: str
     timeout_seconds: float = 10.0
@@ -56,22 +55,6 @@ class HomeAssistantClient:
     def read_entity_state(self, entity_id: str) -> Optional[Dict[str, Any]]:
         """Alias for read_state."""
         return self.read_state(entity_id)
-        """Synchronous fetch of entity state."""
-        url = f"{self._base_url}/api/states/{entity_id}"
-        try:
-            response = self._session.get(url, timeout=self._config.timeout_seconds)
-        except requests.RequestException as exc:
-            logging.warning("HA request failed for %s: %s", entity_id, exc)
-            return None
-        if response.status_code == 404:
-            logging.debug("HA entity %s not found", entity_id)
-            return None
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            logging.error("HA error for %s: %s", entity_id, exc)
-            return None
-        return response.json()
 
     async def read_state_async(self, session: aiohttp.ClientSession, entity_id: str) -> Optional[Dict[str, Any]]:
         """Asynchronous fetch of entity state."""

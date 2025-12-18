@@ -1,0 +1,81 @@
+channels:
+  - id: house_activity
+    description: Aggregate of motion, media, and lighting states.
+    clamp: [0.0, 1.0]
+    formula:
+      - feature: motion_living_recent
+        weight: 0.5
+        curve: smoothstep
+      - feature: media_is_playing
+        weight: 0.2
+      - feature: lights_on_ratio
+        weight: 0.3
+
+  - id: soundscape
+    description: Loudness and content-driven ambience.
+    clamp: [0.0, 1.0]
+    formula:
+      - feature: media_loudness
+        weight: 0.7
+        curve: ease_in
+      - feature: media_is_playing
+        weight: 0.3
+
+  - id: daylight
+    description: Outdoor lux + blinds openness.
+    formula:
+      - feature: blinds_open_ratio
+        weight: 0.5
+      - feature: outdoor_lux
+        weight: 0.5
+
+  - id: comfort
+    description: Deviation from desired climate.
+    bias: 1.0
+    formula:
+      - feature: temp_deviation
+        weight: -0.6
+        curve: ease_out
+      - feature: humidity_living
+        weight: -0.2
+      - feature: hvac_activity
+        weight: -0.2
+
+  - id: resource_use
+    description: Water + energy usage pulse.
+    formula:
+      - feature: water_flow_now
+        weight: 0.4
+      - feature: water_today
+        weight: 0.2
+      - feature: clean_energy_score
+        weight: -0.2
+        curve: smoothstep
+
+  - id: network_health
+    clamp: [0.0, 1.0]
+    formula:
+      - feature: net_load
+        weight: 0.5
+      - feature: net_latency
+        weight: -0.3
+      - feature: devices_online_ratio
+        weight: 0.2
+
+  - id: security_tension
+    description: Door, lock, and leak status.
+    formula:
+      - feature: front_door_locked
+        weight: -0.4
+      - feature: leak_alert
+        weight: 0.6
+      - feature: garage_open_recent
+        weight: 0.4
+
+  - id: long_term_drift
+    description: Slow seasonal baseline.
+    formula:
+      - feature: daylight_trend
+        weight: 0.5
+      - feature: resource_trend
+        weight: 0.5

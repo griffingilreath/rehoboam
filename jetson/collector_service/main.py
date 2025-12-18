@@ -12,26 +12,28 @@ import sys
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 import aiohttp
 import requests
 import websocket
 import yaml
+from pydantic import BaseModel, Field
 
 from jetson.common.json_store import atomic_write_json, load_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.config import expand_env_placeholders
 from jetson.common.home_assistant import HomeAssistantClient, HomeAssistantConfig
-
+from jetson.common.http import create_retry_session
+from jetson.common.utils import wait_for_next_cycle
 DEFAULT_CONFIG_PATH = "jetson/collector_service/config.yaml"
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_EVENTS_LOG_FILENAME = "events.json"
 RAW_STATE_SCHEMA_VERSION = "1.0"
+EVENTS_SCHEMA_VERSION = "1.0"
 
 
 class EventLogWriter:
@@ -46,15 +48,14 @@ class EventLogWriter:
         if not events:
             return
         with self._lock:
-            existing_payload = load_json(self._path, {"events": []})
+            existing_payload = load_json(self._path, {"events": [], "schema_version": EVENTS_SCHEMA_VERSION})
             existing = existing_payload.get("events", []) if isinstance(existing_payload, dict) else []
             merged = (existing + events)[-self._max_entries :]
-            payload = {"events": merged}
+            payload = {"schema_version": EVENTS_SCHEMA_VERSION, "events": merged}
             atomic_write_json(self._path, payload)
 
 
-@dataclass
-class PiHoleConfig:
+class PiHoleConfig(BaseModel):
     enabled: bool = False
     base_url: str | None = None
     api_path: str = "/admin/api.php"
@@ -62,27 +63,24 @@ class PiHoleConfig:
     timeout_seconds: float = 5.0
 
 
-@dataclass
-class PingConfig:
+class PingConfig(BaseModel):
     count: int = 1
     timeout_seconds: float = 1.0
 
 
-@dataclass
-class EventConfig:
+class EventConfig(BaseModel):
     enabled: bool = True
     reconnect_delay_seconds: float = 5.0
 
 
-@dataclass
-class ServiceConfig:
+class ServiceConfig(BaseModel):
     data_dir: Path
-    led_config_filename: str
-    raw_state_filename: str
-    events_log_filename: str
+    led_config_filename: str = DEFAULT_LED_CONFIG_FILENAME
+    raw_state_filename: str = DEFAULT_RAW_STATE_FILENAME
+    events_log_filename: str = DEFAULT_EVENTS_LOG_FILENAME
     poll_interval_seconds: float
-    event_buffer_seconds: float
-    context_entities: List[str]
+    event_buffer_seconds: float = 10.0
+    context_entities: List[str] = Field(default_factory=list)
     home_assistant: HomeAssistantConfig
     pihole: PiHoleConfig
     ping: PingConfig
@@ -206,7 +204,7 @@ class PiHoleClient:
         self._api_path = config.api_path or "/admin/api.php"
         self._token = config.token
         self._timeout = config.timeout_seconds
-        self._session = requests.Session()
+        self._session = create_retry_session(timeout=config.timeout_seconds)
 
     def summary(self) -> Optional[Dict[str, Any]]:
         # Synchronous implementation kept for reference
@@ -337,14 +335,24 @@ class HomeAssistantEventStream(threading.Thread):
         self._client = HomeAssistantClient(config)
         self._client = HomeAssistantClient(config)
 
-    def run(self) -> None:  # pragma: no cover - network loop
+    def run(self) -> None:
+        delay = self._event_config.reconnect_delay_seconds
         while not self._stop.is_set():
+            started = time.monotonic()
             try:
                 self._listen_once()
             except Exception as exc:
                 logging.warning("Event stream disconnected: %s", exc)
-            if not self._stop.wait(self._event_config.reconnect_delay_seconds):
-                logging.info("Reconnecting to Home Assistant event stream...")
+            
+            # Reset backoff if we stayed connected for a while
+            if time.monotonic() - started > 30.0:
+                delay = self._event_config.reconnect_delay_seconds
+
+            if not self._stop.is_set():
+                logging.info("Reconnecting to Home Assistant event stream in %.1fs...", delay)
+                if self._stop.wait(delay):
+                    break
+                delay = min(delay * 2, 300.0)
 
     def stop(self) -> None:
         self._stop.set()
@@ -396,7 +404,7 @@ class CollectorService:
         self._pinger = Pinger(config.ping)
         self._pihole = PiHoleClient(config.pihole)
         self._event_buffer = EventBuffer(config.event_buffer_seconds)
-        self._event_archive: Deque[Dict[str, Any]] = deque()
+        self._event_archive: Deque[Dict[str, Any]] = deque(maxlen=2000)
         self._archive_lock = threading.Lock()
         self._event_log_writer = EventLogWriter(config.events_log_path)
         self._context_entities = config.context_entities
@@ -518,7 +526,7 @@ class CollectorService:
         ip = led_entry.get("ip")
         
         # These checks can run in parallel for a single device too
-        coros = {}
+        coros: Dict[str, Awaitable[Any]] = {}
         
         if ip:
             coros["ping"] = self._pinger.ping_async(ip)
@@ -583,6 +591,9 @@ class CollectorService:
         result: Dict[str, Any] = {}
         ip = led_entry.get("ip")
         if ip:
+            # Run pings in parallel if we have many devices to avoid blocking
+            # For now, simple optimization: reduce timeout/count if many failures detected
+            # Future: use asyncio or ThreadPoolExecutor for pings
             reachable, rtt_ms = self._pinger.ping(ip)
             result["reachable"] = reachable
             if rtt_ms is not None:
@@ -708,28 +719,24 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     data = expand_env_placeholders(data)
     overrides = overrides or RunnerOverrides()
-    home_cfg = HomeAssistantConfig(**data.get("home_assistant", {}))
-    pihole_cfg = PiHoleConfig(**data.get("pihole", {}))
-    ping_cfg = PingConfig(**data.get("ping", {}))
-    events_cfg = EventConfig(**data.get("events", {}))
-    data_dir = overrides.data_dir or Path(data.get("data_dir", "./data")).expanduser().resolve()
-    poll_interval = overrides.poll_interval_seconds or float(data.get("poll_interval_seconds", 3))
-    log_level = overrides.log_level or (data.get("logging", {}) or {}).get("level", "INFO")
-    config = ServiceConfig(
-        data_dir=data_dir,
-        led_config_filename=data.get("led_config_filename", DEFAULT_LED_CONFIG_FILENAME),
-        raw_state_filename=data.get("raw_state_filename", DEFAULT_RAW_STATE_FILENAME),
-        events_log_filename=data.get("events_log_filename", DEFAULT_EVENTS_LOG_FILENAME),
-        poll_interval_seconds=poll_interval,
-        event_buffer_seconds=float(data.get("event_buffer_seconds", 10)),
-        context_entities=data.get("context_entities", []) or [],
-        home_assistant=home_cfg,
-        pihole=pihole_cfg,
-        ping=ping_cfg,
-        events=events_cfg,
-        log_level=log_level,
-    )
-    return config
+    
+    if overrides.data_dir:
+        data["data_dir"] = overrides.data_dir
+    else:
+        if "data_dir" not in data:
+            data["data_dir"] = "./data"
+    
+    # Ensure paths are expanded/resolved even if coming from YAML
+    if "data_dir" in data:
+        data["data_dir"] = Path(data["data_dir"]).expanduser().resolve()
+    
+    if overrides.poll_interval_seconds:
+        data["poll_interval_seconds"] = overrides.poll_interval_seconds
+    
+    if overrides.log_level:
+        data["log_level"] = overrides.log_level
+        
+    return ServiceConfig(**data)
 
 
 def main() -> None:

@@ -21,7 +21,26 @@
     },
     "context": {
       "type": "object",
-      "additionalProperties": true
+      "additionalProperties": true,
+      "properties": {
+        "timestamp": {"type": "integer", "minimum": 0},
+        "daypart": {"type": "string"},
+        "entities": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "flags": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "occupied": {"type": "boolean"},
+            "rain_expected": {"type": "boolean"}
+          }
+        }
+      }
     }
   }
 }
