@@ -21,9 +21,18 @@ def load_json(path: Path, default: Any = None) -> Any:
 def atomic_write_json(path: Path, payload: Any, *, indent: int = 2) -> None:
     """Atomically write JSON to *path* using a temp file + rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent) as tmp:
-        json.dump(payload, tmp, indent=indent)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        temp_name = Path(tmp.name)
-    temp_name.replace(path)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent) as tmp:
+            json.dump(payload, tmp, indent=indent)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            temp_path = Path(tmp.name)
+        temp_path.replace(path)
+    except Exception:
+        if temp_path and temp_path.exists():
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+        raise

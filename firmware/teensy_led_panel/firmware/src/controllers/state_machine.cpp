@@ -77,7 +77,13 @@ void StateMachine::resolveState(uint32_t now) {
     (void)now;
 
     if (alarmActive_) {
-        // TODO: switch to alarm handler
+        // Alarm behavior: Flash Orange
+        if ((now / 250) % 2 == 0) {
+            std::fill(leds_.begin(), leds_.end(), COLOR_WARN);
+        } else {
+            std::fill(leds_.begin(), leds_.end(), COLOR_OFF);
+        }
+        frameReady_ = true;
         return;
     }
 
