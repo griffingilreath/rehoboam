@@ -1,20 +1,32 @@
 #include "controllers/protocol_controller.hpp"
 
 #include "controllers/state_types.hpp"
+#include "config.hpp"
 
 namespace ledpanel {
 namespace controllers {
+
+static constexpr uint8_t START_MARKER = 0xBE;
+static constexpr uint8_t END_MARKER = 0xED;
+static constexpr size_t LED_FRAME_SIZE = 1 + (LED_COUNT * 3) + 1; // Start + 16*3 + End = 50
 
 ProtocolController::ProtocolController(Stream &serial, StateMachine &stateMachine)
     : serial_{serial}, stateMachine_{stateMachine} {}
 
 void ProtocolController::poll(uint32_t now) {
-    (void)now;
-
     if (!serial_.available()) {
         return;
     }
 
+    // Check for binary frame start
+    if (serial_.peek() == START_MARKER) {
+        if (serial_.available() >= LED_FRAME_SIZE) {
+            handleBinaryFrame(now);
+        }
+        return;
+    }
+
+    // Otherwise treat as text command
     String line = serial_.readStringUntil('\n');
     line.trim();
 
@@ -23,6 +35,41 @@ void ProtocolController::poll(uint32_t now) {
     }
 
     handleLine(line, now);
+}
+
+void ProtocolController::handleBinaryFrame(uint32_t now) {
+    (void)now;
+    
+    // Buffer to hold the frame
+    uint8_t buffer[LED_FRAME_SIZE];
+    
+    // Read the full frame
+    size_t read = serial_.readBytes(buffer, LED_FRAME_SIZE);
+    
+    if (read != LED_FRAME_SIZE) {
+        // Should not happen if available() check passed, but safety first
+        return;
+    }
+
+    // Verify footer
+    if (buffer[LED_FRAME_SIZE - 1] != END_MARKER) {
+        // Invalid frame, flush and ignore
+        // We consumed the start marker and some bytes, effectively resyncing
+        sendErr("BAD_FRAME");
+        return;
+    }
+
+    std::array<LedData, LED_COUNT> data;
+    size_t offset = 1; // Skip start marker
+    
+    for (size_t i = 0; i < LED_COUNT; i++) {
+        data[i].health = buffer[offset++];
+        data[i].activityLevel = buffer[offset++];
+        data[i].activityType = buffer[offset++];
+    }
+
+    stateMachine_.updateLeds(data);
+    // No ACK for binary frames to save bandwidth/latency
 }
 
 void ProtocolController::handleLine(const String &line, uint32_t now) {

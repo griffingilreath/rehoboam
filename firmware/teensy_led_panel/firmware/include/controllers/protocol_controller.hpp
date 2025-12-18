@@ -15,6 +15,7 @@ public:
 
 private:
     void handleLine(const String &line, uint32_t now);
+    void handleBinaryFrame(uint32_t now);
     void sendAck(const char *command);
     void sendErr(const char *reason);
 
