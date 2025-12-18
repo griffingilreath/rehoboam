@@ -79,7 +79,9 @@ class EpaperService:
             factory = SCENE_MAP.get(scene_name)
             if not factory:
                 logging.error("Unknown scene '%s'", scene_name)
-                return
+                # Exiting successfully here masks configuration errors (e.g. under systemd).
+                # Raising SystemExit ensures a non-zero exit code like the old behavior.
+                raise SystemExit(f"Unknown scene '{scene_name}'")
 
             scene = factory(**self._config.extra_config)
             scene.bootstrap(panel)
