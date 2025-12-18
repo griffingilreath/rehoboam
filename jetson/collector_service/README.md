@@ -13,6 +13,11 @@ Collects raw device telemetry (reachability, Home Assistant availability, Pi-hol
 - Stream Home Assistant `state_changed` events and keep a short rolling buffer for activity counts.
 - Emit `raw_state.json` with `devices` + `events` sections at a steady cadence.
 
+## Performance
+
+The service uses a **thread pool** to parallelize network operations (pings, Home Assistant API calls) across all configured devices. This ensures that even with 16+ devices and potential network timeouts, the collection cycle remains fast and consistent (typically <1s).
+
+
 ## Prerequisites
 
 - Python 3.9+ and `pip install -r jetson/requirements.txt` (needs `requests`, `PyYAML`, `websocket-client`).
