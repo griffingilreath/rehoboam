@@ -14,7 +14,7 @@ const CRGB COLOR_UNK = CRGB::Purple;
 
 StateMachine::StateMachine()
     : currentState_{BaseState::Startup},
-      baseState_{BaseState::Startup},
+      baseState_{BaseState::Standby},
       startupReady_{false},
       alarmActive_{false},
       errorActive_{false},
