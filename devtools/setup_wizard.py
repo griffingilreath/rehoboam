@@ -36,7 +36,7 @@ try:
     from requests.adapters import HTTPAdapter
 except ImportError:
     # Requests is required for validation but script can run without it
-    requests = None
+    requests = None  # type: ignore
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -80,17 +80,12 @@ def confirm(text: str, default: bool = True) -> bool:
 
 
 def load_env_file(env_path: Path) -> dict[str, str]:
-    """Load existing .env file and return as dict."""
+    """Load existing .env file and return as dict using dotenv."""
     if not env_path.exists():
         return {}
-    result: dict[str, str] = {}
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        result[key.strip()] = value.strip()
-    return result
+    
+    from dotenv import dotenv_values
+    return {k: v for k, v in dotenv_values(env_path).items() if v is not None}
 
 
 def write_env_file(env_path: Path, values: dict[str, str]) -> None:
@@ -128,7 +123,7 @@ def load_all_configs() -> tuple[dict[str, str], dict, dict, dict, dict]:
     existing_env = load_env_file(env_path)
     
     api_cfg = REPO_ROOT / "jetson" / "api_service" / "config.yaml"
-    existing_api = {}
+    existing_api: dict = {}
     if api_cfg.exists():
         try:
             existing_api = yaml.safe_load(api_cfg.read_text(encoding="utf-8")) or {}
@@ -136,7 +131,7 @@ def load_all_configs() -> tuple[dict[str, str], dict, dict, dict, dict]:
             pass
     
     led_cfg = REPO_ROOT / "jetson" / "led_encoder_service" / "config.yaml"
-    existing_led = {}
+    existing_led: dict = {}
     if led_cfg.exists():
         try:
             existing_led = yaml.safe_load(led_cfg.read_text(encoding="utf-8")) or {}
@@ -144,7 +139,7 @@ def load_all_configs() -> tuple[dict[str, str], dict, dict, dict, dict]:
             pass
     
     epaper_cfg = REPO_ROOT / "epaper" / "config.yaml"
-    existing_epaper = {}
+    existing_epaper: dict = {}
     if epaper_cfg.exists():
         try:
             existing_epaper = yaml.safe_load(epaper_cfg.read_text(encoding="utf-8")) or {}
@@ -152,7 +147,7 @@ def load_all_configs() -> tuple[dict[str, str], dict, dict, dict, dict]:
             pass
             
     ml_cfg = REPO_ROOT / "jetson" / "ml_service" / "config.yaml"
-    existing_ml = {}
+    existing_ml: dict = {}
     if ml_cfg.exists():
         try:
             existing_ml = yaml.safe_load(ml_cfg.read_text(encoding="utf-8")) or {}
@@ -419,7 +414,7 @@ def validate_pihole_connection(base_url: str, token: str) -> None:
     url = base_url.rstrip("/")
     # Try legacy v5 endpoint which is most common
     api_url = f"{url}/admin/api.php"
-    params = {"summaryRaw": 1}
+    params: dict[str, str | int] = {"summaryRaw": 1}
     if token:
         params["auth"] = token
         
