@@ -1,0 +1,27 @@
+data_dir: ./data
+poll_interval_seconds: 5
+logging:
+  level: INFO
+
+home_assistant:
+  base_url: ${HA_BASE_URL}
+  token: ${HA_TOKEN}
+  timeout_seconds: 10
+  verify_ssl: true
+
+# Map your Rehoboam user IDs (from ai_recommendations.json target_users) to HA notify services.
+# notify_service must be a full HA service like "notify.mobile_app_<device>".
+notify_targets: []
+#  - user_id: user_griffin
+#    notify_service: notify.mobile_app_griffin_iphone
+#    title: "Rehoboam"
+#  - user_id: user_ethan
+#    notify_service: notify.mobile_app_ethan_phone
+#    title: "Rehoboam"
+
+# If a recommendation doesn't specify target_users, notify these users.
+default_user_ids: []
+
+# Avoid spamming: minimum seconds between notifications for the same recommendation id.
+min_resend_seconds: 3600
+

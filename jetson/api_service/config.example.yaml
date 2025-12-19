@@ -5,6 +5,9 @@ canonical_state_filename: canonical_state.json
 history_filename: history.json
 health_filename: service_health.json
 divergence_filename: divergence.json
+cognition_filename: cognition.json
+ai_recommendations_filename: ai_recommendations.json
+feedback_filename: feedback.json
 host: 0.0.0.0
 port: 8000
 reload: false

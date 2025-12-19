@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Rehoboam Cognition Feed",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "timestamp", "source", "agents", "decisions", "approvals"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "timestamp": {"type": "integer", "minimum": 0},
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": {"type": "string"},
+        "base_url": {"type": "string"},
+        "status": {"type": "string"}
+      }
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["agent_id", "name", "status"],
+        "additionalProperties": true,
+        "properties": {
+          "agent_id": {"type": "string"},
+          "name": {"type": "string"},
+          "status": {"type": "string"},
+          "model": {"type": "string"},
+          "decision_interval": {"type": "integer"},
+          "last_decision": {"type": ["string", "null"]},
+          "instruction": {"type": ["string", "null"]},
+          "entities": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "timestamp": {"type": ["string", "integer"]},
+          "agent_id": {"type": "string"},
+          "action": {"type": ["string", "null"]},
+          "reasoning": {"type": ["string", "null"]},
+          "result": {"type": ["string", "null"]},
+          "dry_run": {"type": "boolean"}
+        }
+      }
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {"type": "string"},
+          "timestamp": {"type": ["string", "integer"]},
+          "agent_id": {"type": "string"},
+          "action_type": {"type": "string"},
+          "impact_level": {"type": "string"},
+          "reason": {"type": "string"},
+          "status": {"type": "string"}
+        }
+      }
+    }
+  }
+}
+

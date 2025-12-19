@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2025-01-01T00:00:00Z",
+  "timestamp": 1735689600,
+  "source": {
+    "kind": "external_orchestrator",
+    "base_url": "http://homeassistant.local:8999",
+    "status": "ok"
+  },
+  "agents": [
+    {
+      "agent_id": "lighting",
+      "name": "Lighting Manager",
+      "status": "idle",
+      "model": "mistral:7b-instruct",
+      "decision_interval": 60,
+      "entities": ["light.kitchen", "light.living_room"]
+    }
+  ],
+  "decisions": [
+    {
+      "timestamp": "2025-01-01T00:00:00Z",
+      "agent_id": "lighting",
+      "action": "turn_on_light",
+      "reasoning": "Motion detected after sunset.",
+      "result": "ok",
+      "dry_run": true
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval_1",
+      "timestamp": "2025-01-01T00:00:00Z",
+      "agent_id": "security",
+      "action_type": "unlock_door",
+      "impact_level": "high",
+      "reason": "User requested unlock",
+      "status": "pending"
+    }
+  ]
+}
+

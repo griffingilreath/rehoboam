@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Rehoboam AI Recommendations",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "timestamp", "recommendations"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "timestamp": {"type": "integer", "minimum": 0},
+    "source": {"type": "object", "additionalProperties": true},
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "timestamp", "suggestion", "status"],
+        "additionalProperties": true,
+        "properties": {
+          "id": {"type": "string"},
+          "timestamp": {"type": "integer"},
+          "trigger": {"type": "string"},
+          "area": {"type": "string"},
+          "target": {"type": "string"},
+          "suggestion": {"type": "string"},
+          "confidence": {"type": "number"},
+          "status": {"type": "string"},
+          "target_users": {"type": "array", "items": {"type": "string"}},
+          "actions": {"type": "array", "items": {"type": "object"}, "default": []},
+          "expires_at": {"type": "integer"},
+          "cooldown_key": {"type": "string"}
+        }
+      }
+    }
+  }
+}
+

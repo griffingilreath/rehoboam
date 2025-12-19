@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2025-01-01T00:00:00Z",
+  "timestamp": 1735689600,
+  "feedback": [
+    {
+      "id": "fb_001",
+      "timestamp": 1735689610,
+      "recommendation_id": "rec_001",
+      "decision": "approved",
+      "user_id": "user_griffin",
+      "device_id": "device_iphone",
+      "source": "ha_mobile_app"
+    }
+  ]
+}
+

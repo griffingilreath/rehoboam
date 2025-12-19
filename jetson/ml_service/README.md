@@ -24,6 +24,7 @@ Analyzes `data/history.json` snapshots produced by `state_engine_service` and em
   }
   ```
 - **Consumers:** `/divergence` API endpoint, e-paper divergence scene, dashboards.
+- **Feedback-aware reporting (new):** If `data/feedback.json` exists, the service includes a `feedback_summary` object in `divergence.json` so downstream systems can see per-user approve/decline rates.
 
 ---
 

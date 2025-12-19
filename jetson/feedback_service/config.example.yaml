@@ -1,0 +1,8 @@
+data_dir: ./data
+poll_interval_seconds: 5
+logging:
+  level: INFO
+
+# Keep only the most recent N feedback events on disk.
+max_entries: 500
+

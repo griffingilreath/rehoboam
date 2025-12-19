@@ -50,3 +50,49 @@ Path: `jetson/config_sync_service/main.py`
 **Output**
 
 `./data/led_config.json`:
+
+---
+
+## Cognition Bridge – `cognition_service`
+
+Path: `jetson/cognition_service/main.py`
+
+**Responsibility**
+
+- **Option A**: ingest an external orchestrator’s agent/decision/approval feeds into `data/cognition.json`.
+- **Option B**: generate structured, *suggest-only* recommendations into `data/ai_recommendations.json` (no execution).
+
+**Outputs**
+
+- `data/cognition.json`
+- `data/ai_recommendations.json`
+
+---
+
+## Notifications – `notification_service`
+
+Path: `jetson/notification_service/main.py`
+
+**Responsibility**
+
+- Send Home Assistant **actionable notifications** for `ai_recommendations.json` on a per-user basis.
+- Maintain `notifications_sent.json` to avoid duplicates.
+
+**Outputs**
+
+- `data/notifications_sent.json`
+
+---
+
+## Feedback – `feedback_service`
+
+Path: `jetson/feedback_service/main.py`
+
+**Responsibility**
+
+- Read `data/events.json` and extract `mobile_app_notification_action` events emitted by HA Companion apps.
+- Normalize feedback into `data/feedback.json` and update AI recommendation statuses.
+
+**Outputs**
+
+- `data/feedback.json`

@@ -26,6 +26,7 @@ class MlServiceTest(unittest.TestCase):
             canonical_state_filename="canonical_state.json",
             history_filename="history.json",
             output_filename="divergence.json",
+            feedback_filename="feedback.json",
             poll_interval_seconds=1.0,
             history_window_seconds=3600,
             baseline_days=1,

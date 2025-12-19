@@ -136,33 +136,59 @@ class EventBuffer:
 
 def summarize_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     event = payload.get("event", {})
+    event_type = event.get("event_type") or ""
     data = event.get("data") or {}
-    entity_id = data.get("entity_id")
-    if not entity_id:
-        return {}
-    domain = entity_id.split(".")[0]
-    new_state = data.get("new_state") or {}
-    old_state = data.get("old_state") or {}
-    attributes = new_state.get("attributes") or {}
-    friendly = attributes.get("friendly_name") or entity_id
-    state = new_state.get("state")
-    context = new_state.get("context") or event.get("context") or {}
-    actor = context.get("user_id") or context.get("parent_id") or context.get("source")
-    summary = _derive_summary(domain, new_state, attributes, old_state)
-    timestamp = event.get("time_fired") or new_state.get("last_changed")
-    context = new_state.get("context") or event.get("context") or {}
-    return {
-        "timestamp": timestamp,
-        "entity_id": entity_id,
-        "friendly_name": friendly,
-        "domain": domain,
-        "state": state,
-        "summary": summary,
-        "actor": actor,
-        "origin": payload.get("origin"),
-        "context_user_id": context.get("user_id"),
-        "context_parent_id": context.get("parent_id"),
-    }
+    if event_type == "state_changed":
+        entity_id = data.get("entity_id")
+        if not entity_id:
+            return {}
+        domain = entity_id.split(".")[0]
+        new_state = data.get("new_state") or {}
+        old_state = data.get("old_state") or {}
+        attributes = new_state.get("attributes") or {}
+        friendly = attributes.get("friendly_name") or entity_id
+        state = new_state.get("state")
+        context = new_state.get("context") or event.get("context") or {}
+        actor = context.get("user_id") or context.get("parent_id") or context.get("source")
+        summary = _derive_summary(domain, new_state, attributes, old_state)
+        timestamp = event.get("time_fired") or new_state.get("last_changed")
+        context = new_state.get("context") or event.get("context") or {}
+        return {
+            "timestamp": timestamp,
+            "event_type": event_type,
+            "entity_id": entity_id,
+            "friendly_name": friendly,
+            "domain": domain,
+            "state": state,
+            "summary": summary,
+            "actor": actor,
+            "origin": payload.get("origin"),
+            "context_user_id": context.get("user_id"),
+            "context_parent_id": context.get("parent_id"),
+        }
+
+    if event_type == "mobile_app_notification_action":
+        # Fired when a user taps an actionable notification button on their device.
+        action = data.get("action")
+        tag = data.get("tag")
+        timestamp = event.get("time_fired")
+        context = event.get("context") or {}
+        actor = context.get("user_id") or context.get("parent_id") or context.get("source")
+        return {
+            "timestamp": timestamp,
+            "event_type": event_type,
+            "domain": "notification",
+            "summary": f"Notification action → {action}",
+            "action": action,
+            "tag": tag,
+            "device_id": data.get("device_id"),
+            "actor": actor,
+            "origin": payload.get("origin"),
+            "context_user_id": context.get("user_id"),
+            "context_parent_id": context.get("parent_id"),
+        }
+
+    return {}
 
 
 def _derive_summary(
@@ -370,11 +396,6 @@ class HomeAssistantEventStream(threading.Thread):
                 payload = json.loads(message)
                 if payload.get("type") != "event":
                     continue
-                event = payload.get("event", {})
-                data = event.get("data", {})
-                entity_id = data.get("entity_id")
-                if not entity_id:
-                    continue
                 summary = summarize_event(payload)
                 if summary:
                     summary.setdefault("timestamp_epoch", time.time())
@@ -393,7 +414,9 @@ class HomeAssistantEventStream(threading.Thread):
             raise RuntimeError(f"Authentication failed: {response}")
 
     def _subscribe(self, ws: websocket.WebSocket) -> None:
+        # State changes for activity tracking, plus actionable notification responses for feedback loops.
         ws.send(json.dumps({"id": 1, "type": "subscribe_events", "event_type": "state_changed"}))
+        ws.send(json.dumps({"id": 2, "type": "subscribe_events", "event_type": "mobile_app_notification_action"}))
 
 
 class CollectorService:
