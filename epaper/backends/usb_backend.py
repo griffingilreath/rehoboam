@@ -41,12 +41,25 @@ class USBBackend(Backend):
 
     def _pipe(self, image: Image.Image, x: int, y: int, w: int, h: int) -> None:
         cmd = [self.tool_path, self.device, str(x), str(y), str(w), str(h)]
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
         buf = image.convert("L").tobytes()
         assert proc.stdin is not None
-        proc.stdin.write(buf)
-        proc.stdin.close()
-        proc.wait()
+        try:
+            out, err = proc.communicate(input=buf, timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise RuntimeError(f"USB backend timed out after 10s: {cmd}")
+
+        if proc.returncode != 0:
+            err_msg = err.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"USB backend failed (code {proc.returncode}): {err_msg} CMD: {cmd}"
+            )
         LOGGER.debug("USB backend wrote %s bytes via %s", len(buf), cmd)
 
     def draw_full(self, image: Image.Image, mode: str = "GC16") -> None:
