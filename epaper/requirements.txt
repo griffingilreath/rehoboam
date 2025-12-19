@@ -1,4 +1,4 @@
 Pillow>=10.3
 numpy>=1.26.0
 # Optional: install it8951 if using the SPI backend
-it8951>=0.0.5 ; platform_system == "Linux"
+it8951>=0.0.5 ; platform_system == "Linux" and platform_machine != "x86_64"
