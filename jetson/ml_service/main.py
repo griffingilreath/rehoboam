@@ -812,10 +812,13 @@ class MlService:
             except json.JSONDecodeError as exc:
                 logging.error("Invalid JSON in %s: %s", path, exc)
                 return None
-            entries = data.get("entries") if isinstance(data, dict) else data
-            if not isinstance(entries, list):
+            
+            raw_entries = data.get("entries") if isinstance(data, dict) else data
+            if not isinstance(raw_entries, list):
                 logging.error("history file is not a list")
                 return None
+            
+            entries = raw_entries  # type: ignore [assignment]
             self._history_cache = entries
             self._history_mtime = mtime
             logging.debug("Loaded %d entries from history (mtime: %f)", len(entries), mtime)
