@@ -6,10 +6,10 @@ from typing import Dict
 
 
 class HealthCode(IntEnum):
-    OK = 0
-    WARNING = 1
-    ERROR = 2
-    OFFLINE = 3
+    OFF = 0
+    OK = 1
+    WARNING = 2
+    ERROR = 3
     UNKNOWN = 4
 
     @classmethod
@@ -20,8 +20,8 @@ class HealthCode(IntEnum):
 class ActivityType(IntEnum):
     NONE = 0
     LIGHT_CHANGE = 1
-    DNS_QUERIES = 2
-    BLIND_MOVE = 3
+    BLIND_MOVE = 2
+    DNS_QUERIES = 3
     GENERIC_EVENT = 4
 
     @classmethod

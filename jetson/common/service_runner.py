@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import logging
 import signal
 from dataclasses import dataclass
@@ -111,10 +112,11 @@ def run_service(
 
 def _dispatch_service_run(service: ServiceProtocol, run_once: bool) -> None:
     """Best-effort invocation supporting run(run_once=bool) or run()/run_once()."""
-    try:
+    # Check if service.run accepts 'run_once' parameter
+    sig = inspect.signature(service.run)
+    if "run_once" in sig.parameters:
         service.run(run_once=run_once)
-        return
-    except TypeError:
+    else:
         if run_once and hasattr(service, "run_once"):
             service.run_once()
         else:

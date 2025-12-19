@@ -49,6 +49,8 @@ class LedEncoderService:
         self._dry_run = dry_run
         self._health = ServiceHealthTracker(config.data_dir)
         self._identity = ServiceIdentity(name="led_encoder_service")
+        self._last_mtime: float = 0.0
+        self._cached_canonical_state: Optional[Dict[str, Any]] = None
 
     def request_stop(self, *_: Any) -> None:
         logging.info("Stop requested; closing serial port")
@@ -146,10 +148,18 @@ class LedEncoderService:
         if not path.exists():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            stat = path.stat()
+            if stat.st_mtime > self._last_mtime:
+                self._cached_canonical_state = json.loads(path.read_text(encoding="utf-8"))
+                self._last_mtime = stat.st_mtime
+                logging.debug("Loaded canonical state from disk (mtime=%s)", self._last_mtime)
+            return self._cached_canonical_state
         except json.JSONDecodeError as exc:
             logging.error("Invalid JSON in %s: %s", path, exc)
-            return None
+            return self._cached_canonical_state
+        except OSError as exc:
+            logging.error("IO error reading %s: %s", path, exc)
+            return self._cached_canonical_state
 
     def _ensure_serial_open(self) -> None:
         if self._dry_run:
