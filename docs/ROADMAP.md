@@ -50,3 +50,11 @@ A parallel visualization system for the e-paper display. See `docs/generative_ei
 - [ ] **Cognition & Feedback**: Feedback loops for the system to "express" itself based on divergence.
 - [ ] **Managed Switch Integration**: SNMP support in Telemetry Agent.
 - [ ] **Advanced ML**: Local training on Jetson for behavioral baselines.
+
+## 🛠️ Maintenance & Bug Fixes
+
+- [x] **Ping Timeout**: Fix integer truncation in collector service (Issue #16).
+- [x] **Firmware Compilation**: Add missing ArduinoJson headers (Issue #17).
+- [x] **Type Annotations**: Fix return type in DivergenceScene (Issue #18).
+- [x] **Tests**: Fix missing dependencies for root test runner (Issue #13).
+- [x] **Documentation**: Update Roadmap (Issue #29).

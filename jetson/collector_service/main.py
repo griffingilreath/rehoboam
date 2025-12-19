@@ -336,7 +336,7 @@ class Pinger:
         if self._platform == "windows":
             return ["ping", "-n", str(self._count), "-w", str(int(self._timeout * 1000)), host]
         else:
-            return ["ping", "-c", str(self._count), "-W", str(int(self._timeout)), host]
+            return ["ping", "-c", str(self._count), "-W", str(self._timeout), host]
 
     @staticmethod
     def _parse_rtt_ms(output: str) -> Optional[float]:

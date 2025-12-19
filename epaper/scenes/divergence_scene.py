@@ -72,7 +72,7 @@ class DivergenceScene(Scene):
 
         yield canvas, {"hint": "full"}
 
-    def _load_data(self) -> Dict[str, Any]:
+    def _load_data(self) -> dict[str, Any]:
         if not self.divergence_path.exists():
             return {"score": 0.0, "level": "UNKNOWN"}
         try:

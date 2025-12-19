@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Stream.h>
+#include <ArduinoJson.h>
 
 #include "controllers/state_machine.hpp"
 
@@ -21,6 +22,7 @@ private:
 
     Stream &serial_;
     StateMachine &stateMachine_;
+    StaticJsonDocument<1024> jsonDoc_;
 };
 
 } // namespace controllers
