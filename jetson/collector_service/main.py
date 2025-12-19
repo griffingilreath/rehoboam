@@ -27,7 +27,6 @@ from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.config import expand_env_placeholders
 from jetson.common.home_assistant import HomeAssistantClient, HomeAssistantConfig
 from jetson.common.http import create_retry_session
-from jetson.common.utils import wait_for_next_cycle
 DEFAULT_CONFIG_PATH = "jetson/collector_service/config.yaml"
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
