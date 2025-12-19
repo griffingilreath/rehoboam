@@ -1,0 +1,32 @@
+rules:
+  # If rain is expected (from context.flags), suggest closing blinds.
+  - id: rain_expected_close_blinds
+    type: flag_true
+    flag: rain_expected
+    target_type: blind
+    suggestion: Close blinds
+    confidence: 0.7
+    priority: 1
+    cooldown_seconds: 3600
+
+  # If a LED has been ERROR repeatedly in recent snapshots, suggest checking power/circuit.
+  - id: repeated_error_check_power
+    type: repeated_error
+    window_entries: 10
+    min_occurrences: 3
+    suggestion: Check power/circuit
+    confidence: 0.8
+    priority: 2
+    cooldown_seconds: 1800
+
+  # If a large fraction of LEDs are ERROR, suggest investigating network/core services.
+  - id: high_error_ratio_investigate_network
+    type: metric_threshold
+    metric: error_ratio
+    op: gte
+    threshold: 0.25
+    target: system
+    suggestion: Investigate network/core services (many devices reporting ERROR)
+    confidence: 0.65
+    priority: 3
+    cooldown_seconds: 900

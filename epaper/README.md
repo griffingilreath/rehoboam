@@ -50,9 +50,11 @@ cp epaper/config.example.yaml epaper/config.yaml
 python -m epaper.service.main --config epaper/config.yaml
 ```
 
-The service also supports `--once` to run a single pass (render one frame) and exit, which is useful for debugging.
+**Note**: The service runner supports standard flags like `--log-level` and `--data-dir`, consistent with other Jetson services.
 
 ## IT8951 Setup
+
+If you need a cradle-to-grave guide for Raspberry Pi prep, driver compilation, udev rules, and hardware tuning, see [`docs/it8951_driver_playbook.md`](../docs/it8951_driver_playbook.md). The playbook covers Pi 3B+ vs 4/5 recommendations, SPI overlay tweaks, udev rules, and a migration checklist.
 
 ### SPI backend
 
@@ -85,6 +87,7 @@ manager.full(frame, mode="GC16")
 - **Higher refresh experiments:** tighten the bounding boxes (only repaint the Pi-hole card, divergence bar, or ticker) and stick to `DU` for “live” widgets. The USB backend can batch partials via `it8951usb --partial`, while the SPI backend benefits from raising the SPI clock to 12 MHz (configure via `backend_option spi_hz=12000000`).
 - **More examples:** Waveshare’s repo shows partial-update command sequences and USB workflows; [`GregDMeyer/IT8951`](https://github.com/GregDMeyer/IT8951) includes rotation-aware SPI samples that informed `spi_backend.py`. The fake backend preserves rotation metadata so you can verify layouts before touching hardware.
 - **Vendor sources:** clone the upstream repos under `third_party/it8951/` (see `third_party/README.md`) so the build scripts and patches stay versioned alongside the rest of the rack software.
+- **Pi hardware tips:** A Pi 3B+ works for static scenes, but set `spi_hz=12_000_000`, keep partial regions <400×400 px, and disable the desktop compositor. Prefer a Pi 4 (or newer) for the semantic-channel visualizer so HA ingestion + rendering stay responsive.
 
 [^waveshare]: Official [Waveshare IT8951 examples](https://github.com/waveshare/IT8951) document waveform codes, USB helpers, and refresh timing tables.
 [^greg]: Greg Meyer’s [`IT8951` Python driver](https://github.com/GregDMeyer/IT8951) illustrates SPI wiring, fast waveform selection, and partial-refresh usage mirrored by this repo.

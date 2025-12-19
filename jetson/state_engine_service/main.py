@@ -17,6 +17,7 @@ import yaml
 from jetson.common.json_store import atomic_write_json, load_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
+from jetson.common.utils import wait_for_next_cycle
 
 
 DEFAULT_CONFIG_PATH = str(Path(__file__).parent / "config.yaml")
@@ -102,15 +103,12 @@ class StateEngineService:
             started = time.monotonic()
             try:
                 self.process_once()
-            except Exception:
+            except Exception as exc:
                 logging.exception("State engine cycle failed")
-                self._health.mark_error(self._identity, "state engine cycle failed")
+                self._health.mark_error(self._identity, f"state engine cycle failed: {exc}")
             if run_once:
                 break
-            elapsed = time.monotonic() - started
-            sleep_for = max(0.0, self._config.poll_interval_seconds - elapsed)
-            if sleep_for > 0:
-                time.sleep(sleep_for)
+            wait_for_next_cycle(started, self._config.poll_interval_seconds)
 
     def process_once(self) -> None:
         led_config = self._load_json(self._config.led_config_path)
@@ -129,6 +127,7 @@ class StateEngineService:
         for led in led_config.get("leds", []):
             index = led.get("index", 0)
             name = led.get("name") or f"LED {index}"
+            led_type = led.get("type") or "unknown"
             device_state = raw_state.get("devices", {}).get(name)
             led_state = self._per_led_state.setdefault(index, LedState(last_update=now))
             health = self._determine_health(led, device_state, raw_timestamp)
@@ -140,6 +139,7 @@ class StateEngineService:
             canonical_leds.append({
                 "index": index,
                 "name": name,
+                "type": led_type,
                 "health": health,
                 "activity_level": round(activity_level, 3),
                 "activity_type": activity_type,
@@ -233,6 +233,11 @@ class StateEngineService:
         if not self._config.history_enabled:
             return
         path = self._config.history_path
+        
+        # Optimization: Don't read full history every time if just appending
+        # For now, we read full history to enforce retention limits (rolling window)
+        # Future: Use a proper time-series DB (InfluxDB/SQLite) for long-term storage
+        
         existing = load_json(path, {"schema_version": HISTORY_SCHEMA_VERSION, "entries": []})
         if isinstance(existing, dict):
             entries: List[Dict[str, Any]] = list(existing.get("entries") or [])

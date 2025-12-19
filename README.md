@@ -37,6 +37,7 @@ mkdir -p data && cp samples/led_config.sample.json data/led_config.json
 - Enable systemd units: See [Running the System](#running-the-system) section below
 - Test LED panel: `python devtools/test_led_panel.py --quick`
 - View dev dashboard: `python -m http.server 8000` then visit `http://localhost:8000/devtools/dashboard/`
+- Preview the generative e-ink visualizer: `python -m visualizers.generative_eink.examples.pi_weight_demo --backend fake` (see [`docs/generative_eink_quickstart.md`](docs/generative_eink_quickstart.md))
 
 ---
 
@@ -264,29 +265,41 @@ Keep configs + runtime JSON in `data/` while testing, but **never commit** them 
 ### Rack Deployment (Jetson Nano)
 
 ```bash
+# 1. Setup system directories
 sudo mkdir -p /etc/rehoboam && sudo chown jetson:jetson /etc/rehoboam
-cp jetson/*/config.example.yaml /etc/rehoboam/<service>.yaml   # edit with real tokens/IPs
-
-# optional: centralize secrets (read automatically if present)
-sudo tee /etc/rehoboam/secrets.env <<'ENV'
-# Home Assistant
-HA_BASE_URL=http://homeassistant.local:8123
-HA_TOKEN=REPLACE_ME
-# Pi-hole
-PIHOLE_BASE_URL=http://pihole.local
-PIHOLE_TOKEN=REPLACE_ME
-ENV
-
-# create env file for systemd units
+# Create env file for systemd units
 sudo tee /etc/rehoboam.env <<'ENV'
 REHOBOAM_HOME=/opt/rehoboam
 REHOBOAM_VENV=/opt/rehoboam/.venv
 REHOBOAM_DATA=/opt/rehoboam/data
 ENV
 
-cd /opt/rehoboam && python -m venv .venv && source .venv/bin/activate
+# 2. Clone to /opt/rehoboam
+sudo git clone https://github.com/griffingilreath/rehoboam.git /opt/rehoboam
+sudo chown -R jetson:jetson /opt/rehoboam
+cd /opt/rehoboam
+
+# 3. Setup environment & config
+python -m venv .venv && source .venv/bin/activate
 pip install -r jetson/requirements.txt
 
+# Run the wizard to generate config.yaml files and secrets
+# (This creates .env and jetson/*/config.yaml)
+python devtools/setup_wizard.py
+
+# OR configure manually:
+# cp jetson/*/config.example.yaml jetson/*/config.yaml
+# tee .env <<'EOF'
+# HA_BASE_URL=...
+# HA_TOKEN=...
+# EOF
+
+# 4. Move secrets to system path (optional, but recommended for security)
+# The services check /etc/rehoboam/secrets.env before .env
+sudo mv .env /etc/rehoboam/secrets.env
+sudo chmod 600 /etc/rehoboam/secrets.env
+
+# 5. Install systemd units
 sudo cp systemd/rehoboam-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now rehoboam-config-sync.service rehoboam-collector.service \
@@ -294,7 +307,7 @@ sudo systemctl enable --now rehoboam-config-sync.service rehoboam-collector.serv
   rehoboam-ml.service rehoboam-epaper.service
 ```
 
-Secrets (Home Assistant and Pi-hole tokens) live only in `/etc/rehoboam/*.yaml`; never commit real config files.
+Secrets (Home Assistant and Pi-hole tokens) live in `/etc/rehoboam/secrets.env` or `.env`; never commit real config files.
 
 > **E-paper shutdown:** `rehoboam-epaper.service` calls `python -m epaper.service.main ... --shutdown` in `ExecStop` so the IT8951 panel always receives a clean refresh + sleep before power loss. If you create custom units, keep that shutdown step or you risk permanent ghosting on the glass.
 
@@ -450,9 +463,11 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
   ```
 - **Lint + type checks** pair with the suite for local or CI parity:
   ```bash
-  ruff check .
+  python -m ruff check .
   mypy --config-file pyproject.toml jetson
   ```
+- If you install tools with `pip --user`, add `~/.local/bin` to your `PATH` so commands like `ruff` and `mypy` are available without `python -m`.
+- **Optional pre-commit hooks:** Install them once with `pip install pre-commit && pre-commit install`. The hook runs `ruff --fix` and `ruff-format` automatically before each commit.
 - **Visual test runner:** For a more visual local runner, use the included script (adds colors and icons):
   ```bash
   source .venv/bin/activate
@@ -467,6 +482,26 @@ This prints the LED grid summary, context flags, divergence score, and recent HA
 - `service_health.json` entries show `status`, `updated_at`, host, pid, and optional error messages—surface them via API `/health` or inspect directly
 - `events.json` captures normalized Home Assistant events (via `collector_service`) for the e-paper activity feed
 - Files are written atomically (`.tmp` + rename) to keep downstream readers safe
+
+### Backup & Long-Term Storage
+
+The system writes high-frequency state to `data/`. For long-term retention or recovery:
+
+1.  **Backup Strategy:**
+    - The critical configuration is in Home Assistant (helpers) and `config.yaml` files.
+    - `data/led_config.json` is ephemeral (rebuilt from HA).
+    - `data/history.json` and `data/events.json` contain the valuable time-series data.
+    - **Recommendation:** Use `rsync` or `rclone` to sync `data/history.json` and `data/events.json` to a NAS or cloud storage daily.
+
+2.  **Storage Media:**
+    - Frequent atomic writes (every 2-5s) can wear out SD cards.
+    - **Best Practice:** Mount an external USB SSD or HDD at `/opt/rehoboam/data` (or symlink `data/` to it).
+    - **Alternative:** Mount `data/` as a `tmpfs` (RAM disk) for performance, and run a cron job to sync it to persistent storage every hour. This eliminates SD card wear completely for the high-frequency writes.
+
+    ```bash
+    # Example: Sync history to a mounted NAS every hour
+    0 * * * * rsync -a /opt/rehoboam/data/history.json /mnt/nas/backups/rehoboam/
+    ```
 
 ---
 
@@ -522,6 +557,11 @@ When editing services (or letting Cursor refactor code), keep these data contrac
 - [`docs/SERVICES_AND_AGENTS.md`](docs/SERVICES_AND_AGENTS.md): In-depth specs for every agent, firmware responsibilities, client layouts
 - [`docs/ML_ROADMAP.md`](docs/ML_ROADMAP.md): Phased plan for data enrichment, feature extraction, recommendations, and proactive control loops
 - [`docs/home_assistant.md`](docs/home_assistant.md): Helper definitions + Lovelace layout for configuring rack ports from HA. See [`docs/home_assistant_helpers.example.yaml`](docs/home_assistant_helpers.example.yaml) for a complete, ready-to-use configuration example
+- [`docs/generative_eink_visualizer_research.md`](docs/generative_eink_visualizer_research.md): Research notes, historical influences, and channel semantics for the generative e-ink experience
+- [`docs/generative_eink_visualizer_integration.md`](docs/generative_eink_visualizer_integration.md): Wiring plan covering the HA channel daemon, transport, and Pi renderer
+- [`docs/generative_eink_next_steps.md`](docs/generative_eink_next_steps.md): Phase-by-phase roadmap for delivering the generative visualizer
+- [`docs/it8951_driver_playbook.md`](docs/it8951_driver_playbook.md): Raspberry Pi + IT8951 hardware/driver setup playbook, including tuning tips for Pi 3B+/4
+- `docs/research/*.txt`: plain-text exports of the technical plan PDFs for quick grepping
 - Service-specific READMEs under `jetson/*/`, `display_clients/*/`, and `epaper/` cover configuration, operations, and troubleshooting
 
 ### Rack Hardware & Inspiration

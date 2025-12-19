@@ -3,12 +3,17 @@
   "timestamp": 1735689600,
   "generated_at": "2025-01-01T00:00:02Z",
   "context": {
+    "timestamp": 1735689600,
     "daypart": "morning",
-    "rain_expected": false
+    "flags": {
+      "occupied": true,
+      "rain_expected": false
+    }
   },
   "leds": [
     {
       "index": 0,
+      "type": "bridge",
       "health": "OK",
       "activity_level": 0.2,
       "activity_type": "idle"

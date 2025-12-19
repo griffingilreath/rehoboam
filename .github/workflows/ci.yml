@@ -16,18 +16,11 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          python -m venv .venv
-          source .venv/bin/activate
+          python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
       - name: Run linters
-        run: |
-          source .venv/bin/activate
-          ruff check .
+        run: ruff check .
       - name: Run type checks
-        run: |
-          source .venv/bin/activate
-          mypy --config-file pyproject.toml jetson
+        run: mypy --config-file pyproject.toml jetson
       - name: Run unit tests
-        run: |
-          source .venv/bin/activate
-          python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -v

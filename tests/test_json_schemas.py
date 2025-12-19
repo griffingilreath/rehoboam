@@ -18,6 +18,7 @@ FIXTURES = [
     ("history.schema.json", "history.sample.json"),
     ("divergence.schema.json", "divergence.sample.json"),
     ("service_health.schema.json", "service_health.sample.json"),
+    ("events.schema.json", "events.sample.json"),
 ]
 
 
