@@ -714,6 +714,8 @@ class MlService:
             model_path=config.model_path,
             metadata_path=config.model_metadata_path,
         )
+        self._history_cache: List[Dict[str, Any]] | None = None
+        self._history_mtime: float = 0.0
 
     def request_stop(self, *_: Any) -> None:
         logging.info("Stop requested; finishing current cycle")
