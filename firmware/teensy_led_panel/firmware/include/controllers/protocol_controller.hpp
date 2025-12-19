@@ -15,7 +15,8 @@ public:
     void poll(uint32_t now);
 
 private:
-    void handleLine(const char* line, uint32_t now);
+    void handleLine(const String &line, uint32_t now);
+    void handleBinaryFrame(uint32_t now);
     void sendAck(const char *command);
     void sendErr(const char *reason);
 
