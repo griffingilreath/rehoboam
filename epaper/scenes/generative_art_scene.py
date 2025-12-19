@@ -1,59 +1,115 @@
-"""Scene that generates varied algorithmic art."""
+"""Scene that generates varied algorithmic art based on channel data."""
 from __future__ import annotations
 
-import math
-import random
-from typing import Iterator
+import json
+import logging
+import time
+from pathlib import Path
+from typing import Dict, Iterator, List
 
-from PIL import ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
-from ..core.renderer import blank
 from ..core.scene import Frame, Scene
-from ..core.generative import GenerativeAlgorithms
+
+LOGGER = logging.getLogger(__name__)
+
+CHANNEL_ORDER = (
+    "house_activity",
+    "soundscape",
+    "daylight",
+    "comfort",
+    "resource_use",
+    "network_health",
+    "security_tension",
+    "long_term_drift",
+)
 
 class GenerativeArtScene(Scene):
-    def __init__(self, mode: str = "landscape") -> None:
+    def __init__(
+        self, 
+        mode: str = "landscape",
+        channels_path: Path | str = Path("data/generative_channels.json"),
+        font_path: str | None = None
+    ) -> None:
         super().__init__(panel=None)
         self.mode = mode
+        self.channels_path = Path(channels_path)
+        self.font = ImageFont.truetype(font_path, 36) if font_path else ImageFont.load_default()
+        self.last_full_refresh = 0.0
+        # Configurable interval for checking updates
+        self.interval = 30.0 
+        # Full refresh every hour
+        self.full_refresh_interval = 3600.0
 
     def frames(self) -> Iterator[Frame]:
         if self.panel is None:
             raise RuntimeError("Scene not bootstrapped with panel")
 
-        canvas = blank((self.panel.width, self.panel.height))
-        draw = ImageDraw.Draw(canvas)
+        while True:
+            channels = self._read_channels()
+            canvas = self._render_scene(channels)
+            
+            now = time.time()
+            hint = "partial"
+            
+            # Force full refresh periodically
+            if now - self.last_full_refresh > self.full_refresh_interval:
+                hint = "full"
+                self.last_full_refresh = now
+                
+            yield canvas, {"hint": hint, "xy": (0, 0)}
+            
+            time.sleep(self.interval)
+
+    def _read_channels(self) -> Dict[str, float]:
+        if not self.channels_path.exists():
+            LOGGER.warning(f"Channels file not found at {self.channels_path}")
+            return {}
+        try:
+            return json.loads(self.channels_path.read_text(encoding="utf-8"))
+        except Exception:
+            LOGGER.exception("Failed to read channels file")
+            return {}
+
+    def _render_scene(self, channels: Dict[str, float]) -> Image.Image:
+        width = self.panel.width
+        height = self.panel.height
         
-        if self.mode == "landscape":
-            # Generate a random function for the landscape
-            freq = random.uniform(5.0, 15.0)
-            phase = random.uniform(0.0, math.pi * 2)
-            
-            def terrain_func(x, z):
-                # x and z are 0.0-1.0
-                # Simple sine waves
-                return (math.sin(x * freq + phase) * math.cos(z * freq)) * 0.5 + 0.5
+        daylight = channels.get("daylight", 0.5)
+        drift = channels.get("long_term_drift", 0.5)
+        base = int(255 - (daylight * 90) - (drift * 60))
+        image = Image.new("L", (width, height), color=base)
+        draw = ImageDraw.Draw(image)
 
-            bounds = (0, 0, self.panel.width, self.panel.height)
-            GenerativeAlgorithms.floating_horizon(
-                draw, 
-                bounds, 
-                terrain_func, 
-                steps=80, 
-                z_depths=40
-            )
-            
-        elif self.mode == "fabric":
-            # Jacquard Noise
-            # We create a new image and paste it
-            noise_img = GenerativeAlgorithms.jacquard_noise(
-                self.panel.width, 
-                self.panel.height, 
-                warp_prob=0.9, 
-                weft_prob=0.3
-            )
-            canvas.paste(noise_img, (0, 0))
-            
-            # Draw a label
-            draw.text((20, self.panel.height - 40), "JACQUARD PROCESS No. 84", fill=0)
+        # subtle vignette
+        draw.rectangle((0, 0, width, height), outline=int(base - 20), width=8)
 
-        yield canvas, {"hint": "full"}
+        margin = 80
+        usable_height = height - (2 * margin)
+        band_height = max(80, usable_height // len(CHANNEL_ORDER))
+
+        for idx, channel in enumerate(CHANNEL_ORDER):
+            value = float(channels.get(channel, 0.0))
+            y0 = margin + idx * band_height
+            y1 = min(y0 + band_height - 20, height - margin)
+            x0 = margin
+            x1 = width - margin
+            fill_shade = int(255 - (value * 200))
+            draw.rectangle((x0, y0, x1, y1), fill=int(base + 30), outline=fill_shade, width=3)
+
+            bar_width = int((x1 - x0 - 40) * value)
+            draw.rectangle((x0 + 20, y0 + 20, x0 + 20 + bar_width, y1 - 20), fill=fill_shade)
+
+            label = f"{channel.replace('_', ' ').title()}   {value:0.2f}"
+            draw.text((x0 + 30, y1 - 18), label, font=self.font, fill=0)
+
+        # Event glyph for security tension
+        sec = float(channels.get("security_tension", 0.0))
+        glyph_size = 180
+        glyph_x = width - margin - glyph_size
+        glyph_y = margin - glyph_size // 2
+        shade = int(255 - sec * 200)
+        draw.ellipse((glyph_x, glyph_y, glyph_x + glyph_size, glyph_y + glyph_size), outline=shade, width=6)
+        draw.text((glyph_x + 30, glyph_y + (glyph_size // 2) - 10), f"Tension {sec:0.2f}", font=self.font, fill=0)
+
+        return image
