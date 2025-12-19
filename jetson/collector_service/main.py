@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 import platform
 import re
 import subprocess
@@ -336,7 +337,9 @@ class Pinger:
         if self._platform == "windows":
             return ["ping", "-n", str(self._count), "-w", str(int(self._timeout * 1000)), host]
         else:
-            return ["ping", "-c", str(self._count), "-W", str(int(self._timeout)), host]
+            # Round up to ensure at least 1s timeout for standard ping
+            timeout = math.ceil(self._timeout)
+            return ["ping", "-c", str(self._count), "-W", str(timeout), host]
 
     @staticmethod
     def _parse_rtt_ms(output: str) -> Optional[float]:

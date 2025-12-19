@@ -1,7 +1,20 @@
 import unittest
-from jetson.collector_service.main import Pinger
+from jetson.collector_service.main import Pinger, PingConfig
 
 class TestPinger(unittest.TestCase):
+    def test_linux_ping_timeout_formatting(self):
+        config = PingConfig(timeout_seconds=0.5, count=1)
+        pinger = Pinger(config)
+        pinger._platform = "linux"
+        
+        cmd = pinger._get_cmd("1.2.3.4")
+        self.assertIn("-W", cmd)
+        idx = cmd.index("-W")
+        timeout_arg = cmd[idx+1]
+        
+        self.assertNotEqual(timeout_arg, "0", "Timeout truncated to 0")
+        self.assertEqual(timeout_arg, "1", "Timeout should round up to 1s on Linux")
+
     def test_parse_rtt_linux(self):
         output = "rtt min/avg/max/mdev = 0.045/0.055/0.065/0.000 ms"
         rtt = Pinger._parse_rtt_ms(output)
