@@ -1,0 +1,2 @@
+-r jetson/requirements.txt
+-r epaper/requirements.txt

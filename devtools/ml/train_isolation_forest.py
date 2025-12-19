@@ -101,6 +101,8 @@ def main() -> int:
 
     import pickle
 
+    # SECURITY: pickle is unsafe. Ensure the output directory has restricted permissions.
+    # Future improvements should switch to skops or ONNX.
     model_bytes = pickle.dumps(model)
     (version_dir / "model.pkl").write_bytes(model_bytes)
     (latest_dir / "model.pkl").write_bytes(model_bytes)

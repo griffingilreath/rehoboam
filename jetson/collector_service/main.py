@@ -540,13 +540,14 @@ class CollectorService:
             "context": context_snapshot,
         }
         
-        # File I/O is still blocking but fast enough for this scale; can be offloaded if needed.
-        # Ideally we'd use aiofiles, but simple atomic write is okay for now.
+        # File I/O offloaded to thread pool to avoid blocking the loop
         raw_state_path = self._config.raw_state_path
-        atomic_write_json(raw_state_path, payload)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, atomic_write_json, raw_state_path, payload)
+        
         logging.info("Wrote %s for %d devices", raw_state_path, len(devices))
         self._health.mark_running(self._identity)
-        self._flush_event_log()
+        await self._flush_event_log_async()
 
     def _load_led_config(self) -> Optional[Dict[str, Any]]:
         path = self._config.led_config_path
@@ -711,7 +712,18 @@ class CollectorService:
             return [str(entity).strip() for entity in entities if str(entity).strip()]
         return []
 
+    async def _flush_event_log_async(self) -> None:
+        with self._archive_lock:
+            if not self._event_archive:
+                return
+            batch = list(self._event_archive)
+            self._event_archive.clear()
+        
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._event_log_writer.append_many, batch)
+
     def _flush_event_log(self) -> None:
+        # Kept for compatibility if needed, but async version is preferred
         with self._archive_lock:
             if not self._event_archive:
                 return

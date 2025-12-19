@@ -28,6 +28,7 @@ The Teensy accepts two types of input over the USB serial connection:
     - `PING`: Keeps the connection alive (resets error state).
     - `STATE:LIVE` / `STATE:STANDBY`: Switches the display mode.
     - `ALARM:ID:ON` / `ALARM:ID:OFF`: Triggers or clears an alarm state.
+    - `NOTIFY:TYPE:TTL_MS`: Enqueues a notification (e.g., `NOTIFY:warning:5000`). Supported types: `error`, `success`, `warning`.
 
 ## Dependencies
 
