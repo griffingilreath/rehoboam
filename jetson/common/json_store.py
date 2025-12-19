@@ -5,7 +5,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 
 def load_json(path: Path, default: Any = None) -> Any:
@@ -16,6 +16,26 @@ def load_json(path: Path, default: Any = None) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return default
+
+
+def load_json_lines(path: Path) -> List[Any]:
+    """Read a file of JSON lines (NDJSON)."""
+    if not path.exists():
+        return []
+    entries = []
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        pass
+    return entries
 
 
 def atomic_write_json(path: Path, payload: Any, *, indent: int = 2) -> None:
@@ -41,3 +61,19 @@ def atomic_write_json(path: Path, payload: Any, *, indent: int = 2) -> None:
             except OSError:
                 pass
         raise
+
+
+def append_json_line(path: Path, entry: Any) -> None:
+    """Append a JSON object as a single line to a file (NDJSON)."""
+    # Ensure directory exists
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def append_json_lines(path: Path, entries: List[Any]) -> None:
+    """Append multiple JSON objects as lines to a file (NDJSON)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
