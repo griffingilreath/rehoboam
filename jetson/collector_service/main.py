@@ -290,6 +290,9 @@ class PiHoleClient:
 
 
 class Pinger:
+    _NIX_PING_PATTERN = re.compile(r"(?:rtt|round-trip)[^=]*=\s*([0-9\.]+)/([0-9\.]+)/([0-9\.]+)")
+    _WIN_PING_PATTERN = re.compile(r"Average\s*=\s*([0-9\.]+)")
+
     def __init__(self, config: PingConfig) -> None:
         self._count = max(1, config.count)
         self._timeout = max(0.1, config.timeout_seconds)
@@ -344,8 +347,7 @@ class Pinger:
         
         # Regex for *nix style
         # matches: ... = <num>/<num>/<num> ...
-        nix_pattern = re.compile(r"(?:rtt|round-trip)[^=]*=\s*([0-9\.]+)/([0-9\.]+)/([0-9\.]+)")
-        match = nix_pattern.search(output)
+        match = Pinger._NIX_PING_PATTERN.search(output)
         if match:
             try:
                 return float(match.group(2))
@@ -353,8 +355,7 @@ class Pinger:
                 pass
 
         # Windows style: Average = 13ms
-        win_pattern = re.compile(r"Average\s*=\s*([0-9\.]+)")
-        match = win_pattern.search(output)
+        match = Pinger._WIN_PING_PATTERN.search(output)
         if match:
             try:
                 return float(match.group(1))
