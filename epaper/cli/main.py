@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.scene == "divergence":
         scene = DivergenceScene()
     elif args.scene == "generative":
-        scene = GenerativeArtScene()
+        scene = GenerativeArtScene(font_path=args.font)
     else:  # pragma: no cover
         raise SystemExit(f"Scene '{args.scene}' not implemented")
 
