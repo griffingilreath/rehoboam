@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import platform
+import re
 import subprocess
 import sys
 import threading
@@ -336,15 +337,20 @@ class Pinger:
 
     @staticmethod
     def _parse_rtt_ms(output: str) -> Optional[float]:
-        for line in output.splitlines():
-            if "round-trip" in line or "rtt" in line or "Average =" in line:
-                numbers = [token for token in line.replace("=", "/").replace("ms", "").split("/") if token.strip()]
-                try:
-                    values = [float(value) for value in numbers]
-                except ValueError:
-                    continue
-                if values:
-                    return values[min(1, len(values) - 1)]
+        # Linux: rtt min/avg/max/mdev = 0.045/0.045/0.045/0.000 ms
+        # Windows: Minimum = 0ms, Maximum = 0ms, Average = 0ms
+        
+        # Try Linux format first (looking for avg)
+        # matches: rtt ... = .../.../avg/...
+        match = re.search(r"=\s*[0-9.]+/([0-9.]+)/", output)
+        if match:
+            return float(match.group(1))
+
+        # Windows format (Average = Xms)
+        match = re.search(r"Average\s*=\s*([0-9]+)ms", output)
+        if match:
+             return float(match.group(1))
+        
         return None
 
 
