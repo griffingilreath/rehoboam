@@ -309,19 +309,22 @@ def configure_system_storage(existing_api: dict) -> None:
         "led_encoder_service", "ml_service", "state_engine_service"
     ]
     
+    updated_count = 0
     for service in services:
         cfg_path = REPO_ROOT / "jetson" / service / "config.yaml"
         ensure_service_config(REPO_ROOT / "jetson" / service)
         
-        def _update_data_dir(cfg: dict) -> bool:
-            if cfg.get("data_dir") != data_dir:
-                cfg["data_dir"] = data_dir
-                return True
-            return False
-            
-        update_yaml(cfg_path, _update_data_dir)
+        if cfg_path.exists():
+            def _update_data_dir(cfg: dict) -> bool:
+                if cfg.get("data_dir") != data_dir:
+                    cfg["data_dir"] = data_dir
+                    return True
+                return False
+                
+            update_yaml(cfg_path, _update_data_dir)
+            updated_count += 1
         
-    print(f"\n✓ Updated 'data_dir' to '{data_dir}' in all service configs.")
+    print(f"\n✓ Updated 'data_dir' to '{data_dir}' in {updated_count} service configs.")
     
     print("\nSystemd Environment File Generation:")
     print("To run as systemd services, you need /etc/rehoboam.env")
@@ -670,6 +673,7 @@ def main() -> None:
         elif choice == "5":
             configure_ml_service(existing_ml)
             _, _, _, _, existing_ml = load_all_configs()
+            print("\n✓ ML Service configuration updated")
         elif choice == "6":
             configure_led_encoder(existing_led)
             _, _, existing_led, _, _ = load_all_configs()  # Reload to get updated values
