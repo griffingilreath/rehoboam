@@ -48,6 +48,42 @@ class DivergenceModelTest(unittest.TestCase):
         self.assertEqual(result["level"], "normal")
         self.assertAlmostEqual(result["score"], 0.0, places=3)
 
+    def test_active_led_threshold_default(self):
+        # Default is 0.3
+        model = DivergenceModel(baseline_days=1, threshold=2.5)
+        entry = {
+            "leds": [
+                {"activity_level": 0.29},
+                {"activity_level": 0.31},
+            ]
+        }
+        metrics = model._extract_metrics(entry)
+        self.assertEqual(metrics["active_leds"], 1)
+
+    def test_active_led_threshold_custom(self):
+        # Set to 0.5
+        model = DivergenceModel(baseline_days=1, threshold=2.5, active_led_threshold=0.5)
+        entry = {
+            "leds": [
+                {"activity_level": 0.49},
+                {"activity_level": 0.51},
+            ]
+        }
+        metrics = model._extract_metrics(entry)
+        self.assertEqual(metrics["active_leds"], 1)
+
+    def test_active_led_threshold_custom_low(self):
+        # Set to 0.1
+        model = DivergenceModel(baseline_days=1, threshold=2.5, active_led_threshold=0.1)
+        entry = {
+            "leds": [
+                {"activity_level": 0.05},
+                {"activity_level": 0.15},
+            ]
+        }
+        metrics = model._extract_metrics(entry)
+        self.assertEqual(metrics["active_leds"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
