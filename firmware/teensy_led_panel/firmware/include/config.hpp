@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef> // for size_t
 
 namespace ledpanel {
 
@@ -10,5 +11,6 @@ constexpr uint8_t DEFAULT_BRIGHTNESS = 128; // 0-255
 constexpr uint32_t SERIAL_BAUD_RATE = 115200;
 constexpr uint32_t SERIAL_START_TIMEOUT_MS = 3000;
 constexpr uint32_t HOST_HEARTBEAT_TIMEOUT_MS = 120000; // 2 minutes
+constexpr size_t MAX_NOTIFICATION_QUEUE_SIZE = 10;
 
 } // namespace ledpanel

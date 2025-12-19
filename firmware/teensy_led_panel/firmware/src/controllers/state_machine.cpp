@@ -46,7 +46,9 @@ void StateMachine::requestState(BaseState target) {
 }
 
 void StateMachine::triggerNotification(const NotificationPayload &payload) {
-    notificationQueue_.push(payload);
+    if (notificationQueue_.size() < MAX_NOTIFICATION_QUEUE_SIZE) {
+        notificationQueue_.push(payload);
+    }
 }
 
 void StateMachine::triggerAlarm(const AlarmPayload &) {
@@ -127,18 +129,30 @@ void StateMachine::resolveState(uint32_t now) {
         }
     }
     if (!notificationActive_ && !notificationQueue_.empty()) {
-        const auto &payload = notificationQueue_.front();
-        notificationEndMs_ = now + payload.ttlMs;
+        currentNotification_ = notificationQueue_.front();
+        notificationEndMs_ = now + currentNotification_.ttlMs;
         notificationActive_ = true;
         notificationQueue_.pop();
     }
 
     if (notificationActive_) {
-        // Notification animation: Pulse Blue/Cyan
+        // Notification animation: Pulse based on type
         // Using built-in FastLED beatsin8 for smooth pulsing
         uint8_t brightness = beatsin8(60, 100, 255); 
         CRGB color = CRGB::Blue;
-        if ((now / 200) % 2 == 0) color = CRGB::Cyan;
+
+        if (currentNotification_.type == "error") {
+            color = CRGB::Red;
+        } else if (currentNotification_.type == "warning") {
+            color = COLOR_WARN;
+        } else if (currentNotification_.type == "success") {
+            color = COLOR_OK;
+        } else if (currentNotification_.type == "purple") {
+            color = CRGB::Purple;
+        } else {
+            // Default: Pulse Blue/Cyan
+            if ((now / 200) % 2 == 0) color = CRGB::Cyan;
+        }
         
         std::fill(leds_.begin(), leds_.end(), color);
         for(auto &led : leds_) {
