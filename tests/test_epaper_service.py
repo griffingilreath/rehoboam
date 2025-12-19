@@ -13,7 +13,6 @@ class EpaperServiceTest(unittest.TestCase):
             backend_config={"out_dir": tmpdir / "frames"},
             scene="this_scene_does_not_exist",
             log_level="INFO",
-            extra_config={},
         )
         service = EpaperService(config)
 
