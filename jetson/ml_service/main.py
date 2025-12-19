@@ -666,6 +666,9 @@ class ModelRunner:
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(f"pickle unavailable: {exc}") from exc
 
+        # SECURITY: pickle is unsafe. Ensure model_path is trusted and has restricted permissions.
+        # We use pickle because skops/onnx are not yet available in the environment.
+        logging.info("Loading model from %s using pickle (ensure file is trusted)", path)
         try:
             self._model = pickle.loads(path.read_bytes())
         except ModuleNotFoundError as exc:
