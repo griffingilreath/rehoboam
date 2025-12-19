@@ -709,6 +709,8 @@ class MlService:
             model_path=config.model_path,
             metadata_path=config.model_metadata_path,
         )
+        self._history_cache: List[Dict[str, Any]] | None = None
+        self._history_mtime: float = 0.0
 
     def request_stop(self, *_: Any) -> None:
         logging.info("Stop requested; finishing current cycle")
@@ -796,15 +798,28 @@ class MlService:
         path = self._config.history_path
         if not path.exists():
             return None
+
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            logging.error("Invalid JSON in %s: %s", path, exc)
+            mtime = path.stat().st_mtime
+        except OSError:
             return None
-        entries = data.get("entries") if isinstance(data, dict) else data
-        if not isinstance(entries, list):
-            logging.error("history file is not a list")
-            return None
+
+        if self._history_cache is not None and mtime == self._history_mtime:
+            entries = self._history_cache
+        else:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                logging.error("Invalid JSON in %s: %s", path, exc)
+                return None
+            entries = data.get("entries") if isinstance(data, dict) else data
+            if not isinstance(entries, list):
+                logging.error("history file is not a list")
+                return None
+            self._history_cache = entries
+            self._history_mtime = mtime
+            logging.debug("Loaded %d entries from history (mtime: %f)", len(entries), mtime)
+
         recent_cutoff = time.time() - self._config.history_window_seconds
         filtered = [entry for entry in entries if entry.get("timestamp", 0) >= recent_cutoff]
         return filtered or entries
