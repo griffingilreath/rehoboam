@@ -20,7 +20,7 @@ from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.utils import wait_for_next_cycle
 
 
-DEFAULT_CONFIG_PATH = "jetson/state_engine_service/config.yaml"
+DEFAULT_CONFIG_PATH = str(Path(__file__).parent / "config.yaml")
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_RAW_STATE_FILENAME = "raw_state.json"
 DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
