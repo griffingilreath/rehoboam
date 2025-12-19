@@ -7,7 +7,7 @@ import logging
 from ..backends.factory import create_backend
 from ..core.display import DisplayManager
 from ..core import modes
-from ..scenes import ActivityLogScene, DivergenceScene, PiHoleScene, StandbyScene
+from ..scenes import ActivityLogScene, DivergenceScene, PiHoleScene, StandbyScene, GenerativeArtScene
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +23,8 @@ def parse_backend_options(items: list[str]) -> dict[str, object]:
         if key == "size" and "x" in value:
             try:
                 w, h = value.lower().split("x", 1)
-                result[key] = (int(w), int(h))
+                result["width"] = int(w)
+                result["height"] = int(h)
                 continue
             except ValueError:
                 raise SystemExit(f"Invalid size value '{value}'. Expected WIDTHxHEIGHT.")
@@ -40,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--scene",
         default="standby",
-        choices=["standby", "activity_log", "pihole", "divergence"],
+        choices=["standby", "activity_log", "pihole", "divergence", "generative"],
         help="Which scene to render",
     )
     parser.add_argument("--text", default="REHOBOAM", help="Text for standby scene")
@@ -81,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:
         scene = PiHoleScene()
     elif args.scene == "divergence":
         scene = DivergenceScene()
+    elif args.scene == "generative":
+        scene = GenerativeArtScene()
     else:  # pragma: no cover
         raise SystemExit(f"Scene '{args.scene}' not implemented")
 

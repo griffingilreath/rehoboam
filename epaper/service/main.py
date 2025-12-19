@@ -12,13 +12,14 @@ from jetson.common.service_runner import RunnerOverrides, run_service
 from ..backends.factory import create_backend
 from ..core import modes
 from ..core.display import DisplayManager
-from ..scenes import ActivityLogScene, DivergenceScene, PiHoleScene, StandbyScene
+from ..scenes import ActivityLogScene, DivergenceScene, PiHoleScene, StandbyScene, GenerativeArtScene
 
 SCENE_MAP = {
     "standby": StandbyScene,
     "activity_log": ActivityLogScene,
     "pihole": PiHoleScene,
     "divergence": DivergenceScene,
+    "generative": GenerativeArtScene,
 }
 
 
