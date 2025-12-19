@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, TypeVar
 import os
 
+from dotenv import load_dotenv
+
 class ServiceProtocol(Protocol):
     """Simple protocol implemented by all long-running services."""
 
@@ -85,14 +87,8 @@ def run_service(
 
     # Load env secrets early so ${VAR} placeholders in YAML can be expanded by services.
     # Prefer /etc/rehoboam/secrets.env then a local .env if present.
-    for env_file in (Path("/etc/rehoboam/secrets.env"), Path(".env")):
-        if env_file.exists():
-            for line in env_file.read_text(encoding="utf-8").splitlines():
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#") or "=" not in stripped:
-                    continue
-                key, value = stripped.split("=", 1)
-                os.environ.setdefault(key.strip(), value.strip())
+    load_dotenv(Path("/etc/rehoboam/secrets.env"))
+    load_dotenv(Path(".env"))
 
     overrides = RunnerOverrides(
         data_dir=Path(args.data_dir).expanduser().resolve() if args.data_dir else None,
