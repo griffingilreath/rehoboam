@@ -80,17 +80,12 @@ def confirm(text: str, default: bool = True) -> bool:
 
 
 def load_env_file(env_path: Path) -> dict[str, str]:
-    """Load existing .env file and return as dict."""
+    """Load existing .env file and return as dict using dotenv."""
     if not env_path.exists():
         return {}
-    result: dict[str, str] = {}
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        result[key.strip()] = value.strip()
-    return result
+    
+    from dotenv import dotenv_values
+    return dotenv_values(env_path)
 
 
 def write_env_file(env_path: Path, values: dict[str, str]) -> None:
