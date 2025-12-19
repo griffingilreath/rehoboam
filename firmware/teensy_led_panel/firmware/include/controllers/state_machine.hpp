@@ -25,9 +25,9 @@ public:
     void triggerAlarm(const AlarmPayload &payload);
     void clearAlarm(const AlarmPayload &payload);
     void resetError();
-
-    // Data ingestion
-    void updateLedState(uint8_t index, uint8_t health, float activity, uint8_t type);
+    
+    // Data input
+    void updateLeds(const std::array<LedData, LED_COUNT> &data);
 
     // LED buffer access
     CRGB *ledBuffer();
@@ -36,7 +36,7 @@ public:
 private:
     void resolveState(uint32_t now);
     void stepActiveState(uint32_t now);
-    CRGB getHealthColor(uint8_t healthCode);
+    void renderLive(uint32_t now);
 
     BaseState currentState_;
     BaseState baseState_;
@@ -46,7 +46,7 @@ private:
     bool frameReady_;
 
     std::array<CRGB, LED_COUNT> leds_{};
-    std::array<LedState, LED_COUNT> logicalLeds_{};
+    std::array<LedData, LED_COUNT> ledData_{};
 
     // Track timestamps
     uint32_t lastHeartbeatMs_;

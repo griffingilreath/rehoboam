@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 import glob
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import serial
 import yaml
@@ -45,7 +45,7 @@ class LedEncoderService:
         self._config = config
         self._serial: Optional[serial.Serial] = None
         self._stop_requested = False
-        self._last_frame_payload: Optional[str] = None
+        self._last_frame_payload: Optional[bytes] = None
         self._dry_run = dry_run
         self._health = ServiceHealthTracker(config.data_dir)
         self._identity = ServiceIdentity(name="led_encoder_service")
@@ -76,40 +76,59 @@ class LedEncoderService:
         if not canonical_state:
             logging.debug("Canonical state missing or empty; skipping frame")
             return
-        frame = self._build_frame(canonical_state)
-        serialized = json.dumps(frame, separators=(",", ":"))
-        if serialized == self._last_frame_payload:
+        
+        # Build binary frame instead of JSON
+        # Frame format: START_MARKER (1) + 16 * (Health(1) + ActivityLevel(1) + ActivityType(1)) + END_MARKER (1)
+        # Total: 50 bytes
+        frame_bytes = self._build_binary_frame(canonical_state)
+        
+        if frame_bytes == self._last_frame_payload:
             logging.debug("Frame unchanged; not writing to serial")
             return
+
         if self._dry_run:
-            print(serialized)
+            print(f"Binary frame ({len(frame_bytes)} bytes): {frame_bytes.hex()}")
         else:
             self._ensure_serial_open()
             if not self._serial:
                 logging.warning("Serial device unavailable; dropping frame")
                 return
-            self._serial.write(serialized.encode("utf-8"))
-            self._serial.write(b"\n")
+            self._serial.write(frame_bytes)
             self._serial.flush()
-        self._last_frame_payload = serialized
-        logging.info("Sent frame %s with %d LEDs", frame.get("frame_id"), len(frame.get("leds", [])))
+        
+        self._last_frame_payload = frame_bytes
+        logging.info("Sent binary frame (%d bytes)", len(frame_bytes))
         self._health.mark_running(self._identity)
 
-    def _build_frame(self, canonical_state: Dict[str, Any]) -> Dict[str, Any]:
-        timestamp = canonical_state.get("timestamp", int(time.time()))
-        leds = []
-        for led_entry in canonical_state.get("leds", []):
-            leds.append({
-                "i": int(led_entry.get("index", 0)),
-                "h": self._map_health(led_entry.get("health")),
-                "a": round(float(led_entry.get("activity_level", 0.0)), 3),
-                "t": self._map_activity_type(led_entry.get("activity_type")),
-            })
-        return {
-            "frame_id": timestamp,
-            "timestamp": timestamp,
-            "leds": leds,
-        }
+    def _build_binary_frame(self, canonical_state: Dict[str, Any]) -> bytes:
+        # Sort LEDs by index to ensure correct order
+        leds_list = canonical_state.get("leds", [])
+        # Create a map for easy lookup
+        led_map = {int(led.get("index", -1)): led for led in leds_list}
+        
+        buffer = bytearray()
+        buffer.append(0xBE)  # START_MARKER
+        
+        for i in range(16):  # LED_COUNT = 16
+            led = led_map.get(i, {})
+            
+            # Health (uint8)
+            health_str = led.get("health")
+            health_code = self._map_health(health_str)
+            buffer.append(health_code)
+            
+            # Activity Level (uint8, scaled 0-255 from 0.0-1.0)
+            activity_level = float(led.get("activity_level", 0.0))
+            activity_byte = min(255, max(0, int(activity_level * 255)))
+            buffer.append(activity_byte)
+            
+            # Activity Type (uint8)
+            activity_type_str = led.get("activity_type")
+            type_code = self._map_activity_type(activity_type_str)
+            buffer.append(type_code)
+            
+        buffer.append(0xED)  # END_MARKER
+        return bytes(buffer)
 
     def _map_health(self, health: Optional[str]) -> int:
         if not health:
