@@ -59,6 +59,7 @@ private:
     std::queue<NotificationPayload> notificationQueue_;
     bool notificationActive_;
     uint32_t notificationEndMs_;
+    NotificationPayload currentNotification_;
 };
 
 } // namespace controllers
