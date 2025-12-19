@@ -56,9 +56,20 @@ class SPIBackend(Backend):
         xy: Tuple[int, int] = (0, 0),
         mode: str = "DU",
     ) -> None:
-        # Not all drivers support partial; fall back to full update.
         LOGGER.debug("SPI partial update requested at %s using mode %s", xy, mode)
-        self.draw_full(image, mode="GC16")
+        disp = self._ensure_display()
+        
+        # Update local buffer at the specified coordinates
+        disp.frame_buf.paste(image.convert("L"), xy)
+        
+        # Resolve waveform mode (defaulting to DU for partial updates)
+        waveform = getattr(constants.DisplayModes, mode, constants.DisplayModes.DU)
+        
+        # Use draw_partial if available (faster/no-flash), otherwise fall back to draw_full
+        if hasattr(disp, "draw_partial"):
+            disp.draw_partial(waveform)
+        else:
+            disp.draw_full(waveform)
 
     def sleep(self) -> None:
         if self._display is None:  # pragma: no cover
