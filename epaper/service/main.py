@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 import yaml
 
 from jetson.common.service_runner import RunnerOverrides, run_service
+from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from ..backends.factory import create_backend
 from ..core import modes
 from ..core.display import DisplayManager
@@ -21,85 +24,131 @@ SCENE_MAP = {
     "divergence": DivergenceScene,
 }
 
+DEFAULT_CONFIG_PATH = "epaper/config.yaml"
+
+
+@dataclass
+class ServiceConfig:
+    data_dir: Path
+    backend: str
+    backend_config: Dict[str, Any]
+    scene: str
+    log_level: str
+    shutdown: bool = False
+    scene_kwargs: Dict[str, Any] = field(default_factory=dict)
+
 
 class EpaperService:
-    def __init__(self, config: dict[str, Any], args: argparse.Namespace):
+    def __init__(self, config: ServiceConfig):
         self._config = config
-        self._args = args
+        self._backend = create_backend(config.backend, **config.backend_config)
+        self._manager = DisplayManager(self._backend)
         self._stop_requested = False
-        
-        backend_cfg = config.get("backend_config") or {}
-        backend = create_backend(config.get("backend", "fake"), **backend_cfg)
-        self._manager = DisplayManager(backend)
+        self._health = ServiceHealthTracker(config.data_dir)
+        self._identity = ServiceIdentity(name="epaper_service")
 
     def request_stop(self, *_: Any) -> None:
+        logging.info("Stop requested; finishing current frame")
         self._stop_requested = True
 
     def run(self, run_once: bool = False) -> None:
-        if getattr(self._args, "shutdown", False):
-            self._shutdown_panel()
+        self._health.mark_running(self._identity)
+        
+        # If shutdown requested, just do that and exit
+        if self._config.shutdown:
+            self._do_shutdown()
             return
 
+        # Normal run
         try:
-            self._run_scene(run_once=run_once)
+            panel = self._manager.start()
+            
+            factory = SCENE_MAP.get(self._config.scene)
+            if not factory:
+                logging.error("Unknown scene '%s'", self._config.scene)
+                self._health.mark_error(self._identity, f"unknown scene {self._config.scene}")
+                sys.exit(1)
+
+            scene = factory(**self._config.scene_kwargs)
+            scene.bootstrap(panel)
+            
+            for frame, meta in scene.frames():
+                if self._stop_requested:
+                    break
+
+                if meta.get("hint") == "partial":
+                    self._manager.partial(frame, xy=meta.get("xy", (0, 0)), mode=modes.PARTIAL_MODE)
+                else:
+                    self._manager.full(frame, mode=modes.FULL_MODE)
+                
+                self._health.mark_running(self._identity)
+                
+                if run_once:
+                    break
+
+        except Exception:
+            logging.exception("E-paper service failed")
+            self._health.mark_error(self._identity, "service failed")
+            raise
         finally:
             self._manager.standby()
 
-    def _shutdown_panel(self) -> None:
+    def _do_shutdown(self) -> None:
         try:
             self._manager.start()
         except Exception:
-            logging.exception("Failed to start backend for shutdown; proceeding anyway")
+            logging.warning("Failed to start backend for shutdown; forcing standby anyway")
         finally:
             self._manager.standby()
-
-    def _run_scene(self, run_once: bool = False) -> None:
-        panel = self._manager.start()
-        scene_name = self._config.get("scene", "standby")
-        factory = SCENE_MAP.get(scene_name)
-        if not factory:
-            logging.error("Unknown scene '%s'", scene_name)
-            return
-
-        # Filter out config keys that aren't for the scene
-        scene_kwargs = {
-            k: v for k, v in self._config.items() 
-            if k not in {"backend", "scene", "log_level", "backend_config"}
-        }
-        scene = factory(**scene_kwargs)
-        scene.bootstrap(panel)
-        
-        for frame, meta in scene.frames():
-            if self._stop_requested:
-                break
-            
-            if meta.get("hint") == "partial":
-                self._manager.partial(frame, xy=meta.get("xy", (0, 0)), mode=modes.PARTIAL_MODE)
-            else:
-                self._manager.full(frame, mode=modes.FULL_MODE)
-            
-            if run_once:
-                break
+            logging.info("Panel placed in standby/shutdown")
 
 
-def load_config(path: Path, overrides: RunnerOverrides) -> dict[str, Any]:
+def load_service_config(path: Path, overrides: RunnerOverrides | None = None) -> ServiceConfig:
+    if not path.exists():
+        print(f"Configuration file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    # We could implement env expansion here if needed, similar to jetson services
-    return data
+    overrides = overrides or RunnerOverrides()
 
+    data_dir = overrides.data_dir or Path(data.get("data_dir", "./data")).expanduser().resolve()
+    log_level = overrides.log_level or data.get("log_level", "INFO")
+    
+    # Extract scene kwargs (everything not reserved)
+    reserved = {"backend", "backend_config", "scene", "log_level", "data_dir"}
+    scene_kwargs = {k: v for k, v in data.items() if k not in reserved}
 
-def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--shutdown", action="store_true", help="Only send standby command to the panel")
+    return ServiceConfig(
+        data_dir=data_dir,
+        backend=data.get("backend", "fake"),
+        backend_config=data.get("backend_config") or {},
+        scene=data.get("scene", "standby"),
+        log_level=log_level,
+        scene_kwargs=scene_kwargs,
+    )
 
 
 def main() -> None:
+    def _add_extra_args(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--shutdown",
+            action="store_true",
+            help="Only send standby command to the panel"
+        )
+
+    def _create_service(config: ServiceConfig, args: argparse.Namespace) -> EpaperService:
+        if args.shutdown:
+            config.shutdown = True
+        logging.info("E-paper service starting (scene=%s, backend=%s)", config.scene, config.backend)
+        return EpaperService(config)
+
     run_service(
         service_name="epaper_service",
-        description="Run epaper scene from YAML config",
-        default_config_path="epaper/config.yaml",
-        load_config=load_config,
-        create_service=EpaperService,
-        add_arguments=add_arguments,
+        description="Drive e-paper scenes from config",
+        default_config_path=DEFAULT_CONFIG_PATH,
+        load_config=load_service_config,
+        create_service=_create_service,
+        add_arguments=_add_extra_args,
     )
 
 

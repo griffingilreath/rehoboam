@@ -30,15 +30,15 @@
 
 ## Communication Protocol
 - **Physical Link**: USB serial (`115200` baud default).
-- **Message Format**: Line-oriented ASCII frames: `COMMAND:ARG1:ARG2\n`.
+- **Message Format**: Line-oriented ASCII frames: `COMMAND:ARG1:ARG2\n` or raw JSON `{"frame_id":...}\n`.
 - **Core Commands**:
   - `STATE:LIVE|STANDBY`
   - `READY`
   - `NOTIFY:<type>:<ttl_ms>`
   - `ALARM:<id>:ON|OFF`
-  - `DATA:<json payload>` (compressed telemetry for live mode)
+  - `{"frame_id": ..., "leds": [...]}` (telemetry for live mode)
   - `PING`
-- **Responses**: Teensy echoes `ACK:<command>` and periodic `HEARTBEAT:<timestamp>`.
+- **Responses**: Teensy echoes `ACK:<command>`.
 - **Error Handling**: Invalid frames yield `ERR:<reason>`; host retries.
 
 ## Host Supervisor

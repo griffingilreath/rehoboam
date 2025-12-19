@@ -9,38 +9,72 @@ ProtocolController::ProtocolController(Stream &serial, StateMachine &stateMachin
     : serial_{serial}, stateMachine_{stateMachine} {}
 
 void ProtocolController::poll(uint32_t now) {
-    (void)now;
-
-    if (!serial_.available()) {
-        return;
+    while (serial_.available() > 0) {
+        char c = serial_.read();
+        
+        if (c == '\n') {
+            inputBuffer_[bufferIndex_] = '\0'; // Null-terminate
+            handleLine(inputBuffer_, now);
+            bufferIndex_ = 0; // Reset buffer
+        } else {
+            if (bufferIndex_ < BUFFER_SIZE - 1) {
+                inputBuffer_[bufferIndex_++] = c;
+            } else {
+                // Overflow - reset buffer and log error if possible
+                bufferIndex_ = 0;
+                sendErr("BUFFER_OVERFLOW");
+            }
+        }
     }
-
-    String line = serial_.readStringUntil('\n');
-    line.trim();
-
-    if (line.length() == 0) {
-        return;
-    }
-
-    handleLine(line, now);
 }
 
-void ProtocolController::handleLine(const String &line, uint32_t now) {
+void ProtocolController::handleLine(const char* line, uint32_t now) {
     (void)now;
 
-    if (line == "READY") {
+    // Check if it's a JSON frame (starts with '{')
+    if (line[0] == '{') {
+        DeserializationError error = deserializeJson(jsonDoc_, line);
+        
+        if (error) {
+            sendErr("JSON_PARSE_ERROR");
+            return;
+        }
+
+        JsonArray leds = jsonDoc_["leds"];
+        if (leds.isNull()) {
+            sendErr("INVALID_FRAME");
+            return;
+        }
+
+        for (JsonVariant v : leds) {
+            uint8_t i = v["i"];
+            uint8_t h = v["h"];
+            float a = v["a"];
+            uint8_t t = v["t"];
+            
+            stateMachine_.updateLedState(i, h, a, t);
+        }
+        
+        stateMachine_.resetError(); // Valid frame = heartbeat
+        // Optional: send ACK for frame, or stay silent to reduce traffic
+        // sendAck("FRAME"); 
+        return;
+    }
+
+    // Legacy/Simple text commands
+    String lineStr = String(line);
+    lineStr.trim();
+    
+    if (lineStr.length() == 0) return;
+
+    if (lineStr == "READY") {
         stateMachine_.requestReady();
         sendAck("READY");
         return;
     }
 
-    if (line.startsWith("{")) {
-        // TODO: Handle JSON frame
-        return;
-    }
-
-    if (line.startsWith("STATE:")) {
-        const String stateVal = line.substring(6);
+    if (lineStr.startsWith("STATE:")) {
+        const String stateVal = lineStr.substring(6);
         if (stateVal == "LIVE") {
             stateMachine_.requestState(BaseState::Live);
             sendAck("STATE");
@@ -53,8 +87,8 @@ void ProtocolController::handleLine(const String &line, uint32_t now) {
         }
     }
 
-    if (line.startsWith("ALARM:")) {
-        const String remainder = line.substring(6);
+    if (lineStr.startsWith("ALARM:")) {
+        const String remainder = lineStr.substring(6);
         if (remainder.endsWith(":ON")) {
             AlarmPayload payload{remainder.substring(0, remainder.length() - 3).c_str()};
             stateMachine_.triggerAlarm(payload);
@@ -69,7 +103,7 @@ void ProtocolController::handleLine(const String &line, uint32_t now) {
         }
     }
 
-    if (line == "PING") {
+    if (lineStr == "PING") {
         stateMachine_.resetError();
         sendAck("PING");
         return;
