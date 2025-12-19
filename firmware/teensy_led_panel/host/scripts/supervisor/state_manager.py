@@ -29,9 +29,32 @@ class StateManager:
 
     @classmethod
     def from_config(cls, config_path: Path) -> "StateManager":
-        # TODO: Parse YAML once written; for now return empty config
         LOG.debug("Loading config from %s", config_path)
-        return cls(devices={})
+        if not config_path.exists():
+            LOG.warning("Config file %s not found", config_path)
+            return cls(devices={})
+
+        try:
+            import yaml
+            with config_path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+
+            devices = {}
+            for name, cfg in data.items():
+                devices[name] = DeviceConfig(
+                    name=name,
+                    kind=cfg.get("kind", "unknown"),
+                    target=cfg.get("target", ""),
+                    priority=cfg.get("priority", "normal"),
+                )
+            LOG.info("Loaded %d devices from config", len(devices))
+            return cls(devices=devices)
+        except ImportError:
+            LOG.error("PyYAML not installed, cannot load config")
+            return cls(devices={})
+        except Exception as exc:
+            LOG.error("Failed to load config %s: %s", config_path, exc)
+            return cls(devices={})
 
     async def on_serial_ready(self, serial_client) -> None:
         self._serial = serial_client
