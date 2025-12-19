@@ -316,38 +316,40 @@ class CognitionService:
 
         # 3. Fallback: extract the first largest valid JSON object
         # We iterate over possible start/end braces to find the largest valid JSON structure.
-        # This is more robust than just finding first '{' and last '}' which might include extra text.
-        stack = []
+        # This state machine handles braces inside strings correctly.
+        stack_depth = 0
         start_idx = -1
-        
-        # Simple brace balancing
-        for i, char in enumerate(text):
-            if char == '{':
-                if not stack:
-                    start_idx = i
-                stack.append('{')
-            elif char == '}':
-                if stack:
-                    stack.pop()
-                    if not stack and start_idx != -1:
-                        # Found a complete top-level object
-                        candidate = text[start_idx : i + 1]
-                        try:
-                            return json.loads(candidate)
-                        except json.JSONDecodeError:
-                            pass
-                        # If this one failed, we could reset and try finding another,
-                        # but typically we just want the first valid main object.
-                        start_idx = -1
+        in_string = False
+        escaped = False
 
-        # 4. Old fallback: first '{' to last '}'
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                return json.loads(text[start : end + 1])
-            except json.JSONDecodeError:
-                return None
+        for i, char in enumerate(text):
+            if in_string:
+                if char == '\\':
+                    escaped = not escaped
+                elif char == '"' and not escaped:
+                    in_string = False
+                else:
+                    escaped = False
+            else:
+                if char == '"':
+                    in_string = True
+                    escaped = False
+                elif char == '{':
+                    if stack_depth == 0:
+                        start_idx = i
+                    stack_depth += 1
+                elif char == '}':
+                    if stack_depth > 0:
+                        stack_depth -= 1
+                        if stack_depth == 0:
+                            # Found a complete top-level object
+                            candidate = text[start_idx : i + 1]
+                            try:
+                                return json.loads(candidate)
+                            except json.JSONDecodeError:
+                                pass
+                            # If this one failed, try to find another top-level object
+                            start_idx = -1
         return None
 
     @staticmethod
