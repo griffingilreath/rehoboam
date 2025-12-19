@@ -11,13 +11,14 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
 from jetson.common.json_store import atomic_write_json
 from jetson.common.service_health import ServiceHealthTracker, ServiceIdentity
 from jetson.common.service_runner import RunnerOverrides, run_service
+from jetson.common.utils import wait_for_next_cycle
 
 
 DEFAULT_CONFIG_PATH = "jetson/ml_service/config.yaml"
@@ -113,6 +114,9 @@ class DivergenceModel:
     ) -> None:
         self._baseline_days = max(1, baseline_days)
         self._threshold = threshold
+        # Cache for baseline metrics to avoid re-computing on every cycle if history is large
+        self._baseline_cache: Tuple[float, Dict[str, tuple[float, float]]] | None = None
+        self._cache_ttl = 300.0  # 5 minutes
         self._baseline_bucket = (baseline_bucket or "global").lower()
         self._baseline_method = (baseline_method or "standard").lower()
         self._score_method = (score_method or "max").lower()
@@ -124,7 +128,7 @@ class DivergenceModel:
             return {"score": 0.0, "level": "unknown"}
         latest = history[-1]
         metrics = self._extract_metrics(latest)
-        baseline = self._compute_baseline(history, latest)
+        baseline = self._get_cached_baseline(history, latest)
         scores = {}
         for key in metrics:
             mean, stdev = baseline.get(key, (0.0, 0.0))
@@ -177,6 +181,16 @@ class DivergenceModel:
         if weight_sum <= 1e-9:
             return float(fallback)
         return total / weight_sum
+
+    def _get_cached_baseline(self, history: List[Dict[str, Any]], latest: Dict[str, Any]) -> Dict[str, tuple[float, float]]:
+        now = time.time()
+        if self._baseline_cache:
+            timestamp, baseline = self._baseline_cache
+            if now - timestamp < self._cache_ttl:
+                return baseline
+        baseline = self._compute_baseline(history, latest)
+        self._baseline_cache = (now, baseline)
+        return baseline
 
     def _extract_metrics(self, entry: Dict[str, Any]) -> Dict[str, float]:
         leds = entry.get("leds", [])
@@ -703,15 +717,12 @@ class MlService:
             start = time.monotonic()
             try:
                 self.process_once()
-            except Exception:
+            except Exception as exc:
                 logging.exception("ML cycle failed")
-                self._health.mark_error(self._identity, "ml cycle failed")
+                self._health.mark_error(self._identity, f"ml cycle failed: {exc}")
             if run_once:
                 break
-            elapsed = time.monotonic() - start
-            sleep_for = max(0.0, self._config.poll_interval_seconds - elapsed)
-            if sleep_for > 0:
-                time.sleep(sleep_for)
+            wait_for_next_cycle(start, self._config.poll_interval_seconds)
 
     def process_once(self) -> None:
         history = self._load_history()
