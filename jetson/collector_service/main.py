@@ -337,20 +337,30 @@ class Pinger:
 
     @staticmethod
     def _parse_rtt_ms(output: str) -> Optional[float]:
-        # Linux: rtt min/avg/max/mdev = 0.045/0.045/0.045/0.000 ms
-        # Windows: Minimum = 0ms, Maximum = 0ms, Average = 0ms
+        # Linux / Mac / BSD: rtt min/avg/max/mdev = 13.425/13.425/13.425/0.000 ms
+        # BusyBox: round-trip min/avg/max = 13.425/13.425/13.425 ms
+        # We look for the pattern "... = min/avg/max..."
+        # The average is the second number.
         
-        # Try Linux format first (looking for avg)
-        # matches: rtt ... = .../.../avg/...
-        match = re.search(r"=\s*[0-9.]+/([0-9.]+)/", output)
+        # Regex for *nix style
+        # matches: ... = <num>/<num>/<num> ...
+        nix_pattern = re.compile(r"(?:rtt|round-trip)[^=]*=\s*([0-9\.]+)/([0-9\.]+)/([0-9\.]+)")
+        match = nix_pattern.search(output)
         if match:
-            return float(match.group(1))
+            try:
+                return float(match.group(2))
+            except ValueError:
+                pass
 
-        # Windows format (Average = Xms)
-        match = re.search(r"Average\s*=\s*([0-9]+)ms", output)
+        # Windows style: Average = 13ms
+        win_pattern = re.compile(r"Average\s*=\s*([0-9\.]+)")
+        match = win_pattern.search(output)
         if match:
-             return float(match.group(1))
-        
+            try:
+                return float(match.group(1))
+            except ValueError:
+                pass
+                
         return None
 
 

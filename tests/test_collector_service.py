@@ -79,5 +79,65 @@ class CollectorServiceTest(unittest.IsolatedAsyncioTestCase):
         return tmp.name
 
 
+class PingParsingTest(unittest.TestCase):
+    def test_linux_iputils(self):
+        from jetson.collector_service.main import Pinger
+        output = """
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=115 time=13.4 ms
+
+--- 8.8.8.8 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 13.425/13.425/13.425/0.000 ms
+"""
+        self.assertAlmostEqual(Pinger._parse_rtt_ms(output), 13.425)
+
+    def test_linux_busybox(self):
+        from jetson.collector_service.main import Pinger
+        output = """
+PING 8.8.8.8 (8.8.8.8): 56 data bytes
+64 bytes from 8.8.8.8: seq=0 ttl=115 time=13.4 ms
+
+--- 8.8.8.8 ping statistics ---
+1 packets transmitted, 1 packets received, 0% packet loss
+round-trip min/avg/max = 13.425/13.425/13.425 ms
+"""
+        self.assertAlmostEqual(Pinger._parse_rtt_ms(output), 13.425)
+
+    def test_windows(self):
+        from jetson.collector_service.main import Pinger
+        output = """
+Pinging 8.8.8.8 with 32 bytes of data:
+Reply from 8.8.8.8: bytes=32 time=13ms TTL=115
+
+Ping statistics for 8.8.8.8:
+    Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 13ms, Maximum = 13ms, Average = 13ms
+"""
+        self.assertEqual(Pinger._parse_rtt_ms(output), 13.0)
+
+    def test_mac_bsd(self):
+        from jetson.collector_service.main import Pinger
+        output = """
+PING 8.8.8.8 (8.8.8.8): 56 data bytes
+64 bytes from 8.8.8.8: icmp_seq=0 ttl=115 time=13.425 ms
+
+--- 8.8.8.8 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 13.425/13.425/13.425/0.000 ms
+"""
+        self.assertAlmostEqual(Pinger._parse_rtt_ms(output), 13.425)
+
+    def test_no_output(self):
+        from jetson.collector_service.main import Pinger
+        self.assertIsNone(Pinger._parse_rtt_ms(""))
+
+    def test_partial_output(self):
+        from jetson.collector_service.main import Pinger
+        output = "PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data."
+        self.assertIsNone(Pinger._parse_rtt_ms(output))
+
+
 if __name__ == "__main__":
     unittest.main()
