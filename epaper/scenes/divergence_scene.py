@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, Iterator
+from typing import Any, Dict, Iterator
 
 from PIL import ImageDraw, ImageFont
 
@@ -72,7 +72,7 @@ class DivergenceScene(Scene):
 
         yield canvas, {"hint": "full"}
 
-    def _load_data(self) -> Dict[str, float]:
+    def _load_data(self) -> Dict[str, Any]:
         if not self.divergence_path.exists():
             return {"score": 0.0, "level": "UNKNOWN"}
         try:

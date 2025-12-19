@@ -56,9 +56,24 @@ class SPIBackend(Backend):
         xy: Tuple[int, int] = (0, 0),
         mode: str = "DU",
     ) -> None:
-        # Not all drivers support partial; fall back to full update.
-        LOGGER.debug("SPI partial update requested at %s using mode %s", xy, mode)
-        self.draw_full(image, mode="GC16")
+        """Attempt a partial update using the IT8951 library."""
+        disp = self._ensure_display()
+        
+        # Paste the partial image into the framebuffer at the correct offset
+        disp.frame_buf.paste(image.convert("L"), xy)
+        
+        # Resolve waveform mode (DU is typical for partial updates)
+        waveform = getattr(constants.DisplayModes, mode, constants.DisplayModes.DU)
+        
+        LOGGER.debug("SPI partial update at %s with mode %s", xy, mode)
+        
+        # IT8951 library supports draw_partial using the internal frame_buf
+        # It updates only the changed region if possible, or falls back to optimized full.
+        try:
+            disp.draw_partial(waveform)
+        except AttributeError:
+            # Fallback for older library versions that might lack explicit partial
+            disp.draw_full(waveform)
 
     def sleep(self) -> None:
         if self._display is None:  # pragma: no cover

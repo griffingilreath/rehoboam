@@ -225,9 +225,29 @@ def create_app(config: ServiceConfig) -> FastAPI:
         for rec in ai_recs:
             if isinstance(rec, dict):
                 merged.append({**rec, "source": rec.get("source") or "ai"})
+        
+        # Robust timestamp/generated_at aggregation
+        try:
+            ts_ml = int(float(ml.get("timestamp") or 0))
+        except (ValueError, TypeError):
+            ts_ml = 0
+        try:
+            ts_ai = int(float(ai.get("timestamp") or 0))
+        except (ValueError, TypeError):
+            ts_ai = 0
+            
+        gen_ml = str(ml.get("generated_at") or "")
+        gen_ai = str(ai.get("generated_at") or "")
+        
+        # ISO8601 strings compare lexicographically, but let's handle empty strings correctly
+        if gen_ml and gen_ai:
+            generated_at = max(gen_ml, gen_ai)
+        else:
+            generated_at = gen_ml or gen_ai
+
         return {
-            "generated_at": max(str(ml.get("generated_at") or ""), str(ai.get("generated_at") or "")),
-            "timestamp": max(int(ml.get("timestamp") or 0), int(ai.get("timestamp") or 0)),
+            "generated_at": generated_at,
+            "timestamp": max(ts_ml, ts_ai),
             "recommendations": merged,
         }
     @app.post("/recommendations/{rec_id}", summary="Acknowledge/override a recommendation status")
