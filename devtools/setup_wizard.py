@@ -156,33 +156,33 @@ def show_config_summary(existing_env: dict[str, str], existing_api: dict, existi
     # Home Assistant
     ha_url = existing_env.get("HA_BASE_URL", "Not configured")
     ha_token = "✓ Set" if existing_env.get("HA_TOKEN") else "✗ Not set"
-    print(f"\nHome Assistant:")
+    print("\nHome Assistant:")
     print(f"  URL: {ha_url}")
     print(f"  Token: {ha_token}")
     
     # Pi-hole
     pihole_url = existing_env.get("PIHOLE_BASE_URL", "Not configured")
     pihole_token = "✓ Set" if existing_env.get("PIHOLE_TOKEN") else "✗ Not set"
-    print(f"\nPi-hole:")
+    print("\nPi-hole:")
     print(f"  URL: {pihole_url}")
     print(f"  Token: {pihole_token}")
     
     # API Service
     api_port = existing_api.get("port", "Not configured")
     cors_origins = existing_api.get("cors_origins", [])
-    print(f"\nAPI Service:")
+    print("\nAPI Service:")
     print(f"  Port: {api_port}")
     print(f"  CORS Origins: {', '.join(cors_origins) if cors_origins else 'None'}")
     
     # LED Encoder
     serial_dev = existing_led.get("serial_device", "Not configured")
-    print(f"\nLED Encoder:")
+    print("\nLED Encoder:")
     print(f"  Serial Device: {serial_dev}")
     
     # E-paper
     if existing_epaper:
         backend = existing_epaper.get("backend", "Not configured")
-        print(f"\nE-paper:")
+        print("\nE-paper:")
         print(f"  Backend: {backend}")
     
     print("="*60 + "\n")
