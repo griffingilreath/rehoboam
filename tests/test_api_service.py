@@ -97,6 +97,40 @@ class ApiServiceTest(unittest.TestCase):
         self.assertEqual(ack.json()["status"], "applied")
         self.assertTrue((data_dir / "recommendations_state.json").exists())
 
+    def test_recommendations_aggregation_robustness(self):
+        # Fixes #32: Verify robustness of timestamp aggregation
+        data_dir = Path(self._tmpdir())
+        
+        # Seed only necessary files for this test
+        seed_file(data_dir / "canonical_state.json", {})
+        seed_file(data_dir / "led_config.json", {})
+        
+        # divergence.json with string float timestamp and empty generated_at
+        seed_file(data_dir / "divergence.json", {
+            "timestamp": "123.45", 
+            "generated_at": "",
+            "recommendations": []
+        })
+        # ai_recommendations.json with integer timestamp and None generated_at
+        seed_file(data_dir / "ai_recommendations.json", {
+            "timestamp": 100,
+            "generated_at": None,
+            "recommendations": []
+        })
+        
+        config = ServiceConfig(data_dir=data_dir)
+        app = create_app(config)
+        client = TestClient(app)
+        
+        resp = client.get("/recommendations/all")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        
+        # timestamp should be max(123, 100) = 123
+        self.assertEqual(data["timestamp"], 123)
+        # generated_at should be empty string (default)
+        self.assertEqual(data["generated_at"], "")
+
     def _tmpdir(self) -> str:
         from tempfile import TemporaryDirectory
 
