@@ -1,13 +1,23 @@
+/* DESIGN_SYSTEM.md Implementation - The Algorithmic Weave */
+
 :root {
-  color-scheme: dark;
-  font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --ok: #3ddc84;
-  --warning: #f6c343;
-  --error: #ff6b6b;
-  --offline: #5c6f82;
-  --unknown: #979dac;
-  --bg: rgba(10, 12, 16, 0.95);
-  --panel: rgba(25, 29, 39, 0.8);
+  /* Phosphor Palette */
+  --bg: #050505;
+  --panel: #111111;
+  --border: #333333;
+  
+  --ok: #00FF41;      /* Emerald-500 */
+  --warning: #FFB000; /* Amber-500 */
+  --error: #FF0033;   /* Ruby-500 */
+  --offline: #333333; /* Dim */
+  --unknown: #666666;
+  
+  --cyan: #00FFFF;
+  --text-main: #E0E0E0;
+  --text-dim: #888888;
+  
+  /* Typography */
+  --font-stack: "IBM Plex Mono", "Courier New", Courier, monospace;
 }
 
 * {
@@ -16,108 +26,166 @@
 
 body {
   margin: 0;
-  padding: 1.5rem;
+  padding: 1rem;
+  background-color: var(--bg);
+  color: var(--text-main);
+  font-family: var(--font-stack);
+  background-image: 
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  background-size: 100% 2px, 3px 100%; /* Scanlines */
   min-height: 100vh;
-  background: radial-gradient(circle at top, rgba(34, 41, 61, 0.9), var(--bg));
-  color: white;
 }
 
-header, footer {
+/* Typography Overrides */
+h1, h2, h3, button, .chip {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: normal;
+}
+
+header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 1rem;
+  margin-bottom: 2rem;
 }
 
+h1 {
+  font-size: 1.5rem;
+  margin: 0;
+  color: var(--cyan);
+  text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+}
+
+/* Punch Card Containers */
+.card, section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  position: relative;
+  
+  /* Cut Corner (Top Right) */
+  clip-path: polygon(
+    0 0, 
+    calc(100% - 20px) 0, 
+    100% 20px, 
+    100% 100%, 
+    0 100%
+  );
+}
+
+section h2 {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 0.5rem;
+  margin-top: 0;
+}
+
+/* Status Chips */
 .status-summary {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 1rem;
 }
 
 .chip {
-  padding: 0.4rem 0.85rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  background: #000;
 }
 
-main {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
-  margin: 1.5rem 0;
-}
-
-section {
-  background: var(--panel);
-  border-radius: 1rem;
-  padding: 1rem;
-  backdrop-filter: blur(20px);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
-}
-
+/* LED Grid - The Schotter Metaphor */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
 }
 
 .led-card {
+  border: 1px solid var(--border);
+  background: #000;
   padding: 0.75rem;
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.8rem;
+  position: relative;
+  transition: all 0.2s steps(4);
+}
+
+.led-card:hover {
+  border-color: var(--cyan);
+  transform: translateY(-2px);
 }
 
 .led-card h3 {
-  margin: 0;
-  font-size: 1rem;
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem 0;
+  color: var(--text-main);
 }
 
 .led-card .meta {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  margin-bottom: 0.5rem;
 }
 
+/* Activity Bar (Dithered look) */
 .led-card .activity {
-  height: 6px;
-  margin-top: 0.5rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  height: 8px;
+  background: #222;
+  border: 1px solid #444;
   position: relative;
+  overflow: hidden;
 }
 
 .led-card .activity span {
-  position: absolute;
+  display: block;
   height: 100%;
-  left: 0;
-  top: 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.5), white);
+  background: var(--text-main);
+  /* Dithering effect via CSS gradients */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 2px,
+    #000 2px,
+    #000 4px
+  );
 }
 
-.card {
-  min-height: 100px;
-}
+/* Health Indicators - Glowing Borders */
+.health-ok { border-left: 3px solid var(--ok); box-shadow: -5px 0 10px -5px var(--ok); }
+.health-warning { border-left: 3px solid var(--warning); box-shadow: -5px 0 10px -5px var(--warning); }
+.health-error { border-left: 3px solid var(--error); box-shadow: -5px 0 10px -5px var(--error); }
+.health-offline { border-left: 3px solid var(--offline); }
 
-footer button {
-  padding: 0.6rem 1.2rem;
-  border-radius: 999px;
-  border: none;
-  font-size: 1rem;
-  color: white;
-  background: linear-gradient(120deg, #3391ff, #5f59f7);
+/* Buttons */
+button {
+  background: transparent;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  padding: 0.5rem 1rem;
+  font-family: inherit;
   cursor: pointer;
+  transition: all 0.1s steps(2);
 }
 
-footer button:active {
-  transform: scale(0.98);
+button:hover {
+  background: var(--cyan);
+  color: #000;
 }
 
-.health-ok { border-left: 4px solid var(--ok); }
-.health-warning { border-left: 4px solid var(--warning); }
-.health-error { border-left: 4px solid var(--error); }
-.health-offline { border-left: 4px solid var(--offline); }
-.health-unknown { border-left: 4px solid var(--unknown); }
+button:active {
+  transform: translate(1px, 1px);
+}
+
+footer {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+  display: flex;
+  justify-content: space-between;
+}

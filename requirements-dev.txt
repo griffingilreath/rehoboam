@@ -1,4 +1,5 @@
 -r jetson/requirements.txt
+-r epaper/requirements.txt
 ruff==0.7.1
 mypy==1.13.0
 types-PyYAML==6.0.12.20240917
