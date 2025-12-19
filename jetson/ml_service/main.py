@@ -59,6 +59,7 @@ class ServiceConfig:
     baseline_method: str = "standard"  # "standard" (mean/pstdev) | "robust" (median/MAD)
     score_method: str = "max"  # "max" | "weighted_mean"
     zscore_cap: float = 10.0
+    active_led_threshold: float = 0.3
     metric_weights: Dict[str, float] | None = None
     recommendations_enabled: bool = True
     rules_path: Path | None = None
@@ -110,6 +111,7 @@ class DivergenceModel:
         baseline_method: str = "standard",
         score_method: str = "max",
         zscore_cap: float = 10.0,
+        active_led_threshold: float = 0.3,
         metric_weights: Dict[str, float] | None = None,
     ) -> None:
         self._baseline_days = max(1, baseline_days)
@@ -121,6 +123,7 @@ class DivergenceModel:
         self._baseline_method = (baseline_method or "standard").lower()
         self._score_method = (score_method or "max").lower()
         self._zscore_cap = float(zscore_cap) if zscore_cap is not None else 0.0
+        self._active_led_threshold = float(active_led_threshold)
         self._metric_weights = metric_weights or {}
 
     def score(self, history: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -196,7 +199,7 @@ class DivergenceModel:
         leds = entry.get("leds", [])
         led_count = max(len(leds), 1)
         activities = [float(led.get("activity_level", 0.0) or 0.0) for led in leds]
-        active_leds = sum(1 for value in activities if value > 0.3)
+        active_leds = sum(1 for value in activities if value > self._active_led_threshold)
         avg_activity = sum(activities) / led_count
         max_activity = max(activities, default=0.0)
         p95_activity = self._percentile(activities, 0.95)
@@ -695,6 +698,7 @@ class MlService:
             baseline_method=config.baseline_method,
             score_method=config.score_method,
             zscore_cap=config.zscore_cap,
+            active_led_threshold=config.active_led_threshold,
             metric_weights=config.metric_weights,
         )
         self._stop_requested = False
@@ -865,6 +869,7 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
         baseline_method=str(data.get("baseline_method", "standard")),
         score_method=str(data.get("score_method", "max")),
         zscore_cap=float(data.get("zscore_cap", 10.0)),
+        active_led_threshold=float(data.get("active_led_threshold", 0.3)),
         metric_weights=(data.get("metric_weights") or None),
         recommendations_enabled=bool(rec_cfg.get("enabled", True)) if isinstance(rec_cfg, dict) else True,
         rules_path=rules_path,
