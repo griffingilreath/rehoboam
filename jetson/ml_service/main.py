@@ -685,6 +685,7 @@ class ModelRunner:
 class MlService:
     def __init__(self, config: ServiceConfig) -> None:
         self._config = config
+        self._history_cache: Optional[Tuple[float, List[Dict[str, Any]]]] = None
         self._model = DivergenceModel(
             config.baseline_days,
             config.zscore_threshold,
@@ -793,15 +794,31 @@ class MlService:
         path = self._config.history_path
         if not path.exists():
             return None
+            
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            logging.error("Invalid JSON in %s: %s", path, exc)
+            mtime = path.stat().st_mtime
+        except OSError:
             return None
-        entries = data.get("entries") if isinstance(data, dict) else data
-        if not isinstance(entries, list):
-            logging.error("history file is not a list")
-            return None
+
+        entries = None
+        if self._history_cache:
+            last_mtime, cached_entries = self._history_cache
+            if last_mtime == mtime:
+                entries = cached_entries
+
+        if entries is None:
+            try:
+                with path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                entries = data.get("entries") if isinstance(data, dict) else data
+                if not isinstance(entries, list):
+                    logging.error("history file is not a list")
+                    return None
+                self._history_cache = (mtime, entries)
+            except (json.JSONDecodeError, OSError) as exc:
+                logging.error("Invalid JSON in %s: %s", path, exc)
+                return None
+
         recent_cutoff = time.time() - self._config.history_window_seconds
         filtered = [entry for entry in entries if entry.get("timestamp", 0) >= recent_cutoff]
         return filtered or entries
