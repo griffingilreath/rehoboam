@@ -26,9 +26,11 @@ public:
     void clearAlarm(const AlarmPayload &payload);
     void resetError();
     
-    // Data input
+    // Data input (binary frames)
     void updateLeds(const std::array<LedData, LED_COUNT> &data);
 
+    // Data ingestion (JSON frames)
+    void updateLedState(uint8_t index, uint8_t health, float activity, uint8_t type);
     // LED buffer access
     CRGB *ledBuffer();
     bool isFrameReady() const;
@@ -37,6 +39,7 @@ private:
     void resolveState(uint32_t now);
     void stepActiveState(uint32_t now);
     void renderLive(uint32_t now);
+    CRGB getHealthColor(uint8_t healthCode);
 
     BaseState currentState_;
     BaseState baseState_;

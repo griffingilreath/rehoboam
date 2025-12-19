@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 import glob
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 
 import serial
 import yaml

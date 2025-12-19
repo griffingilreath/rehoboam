@@ -68,7 +68,7 @@ class EpaperService:
             if not factory:
                 logging.error("Unknown scene '%s'", self._config.scene)
                 self._health.mark_error(self._identity, f"unknown scene {self._config.scene}")
-                return
+                sys.exit(1)
 
             scene = factory(**self._config.scene_kwargs)
             scene.bootstrap(panel)

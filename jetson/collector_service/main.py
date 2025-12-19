@@ -358,7 +358,6 @@ class HomeAssistantEventStream(threading.Thread):
         self._event_config = event_config
         self._stop = threading.Event()
         self._client = HomeAssistantClient(config)
-        self._client = HomeAssistantClient(config)
 
     def run(self) -> None:
         delay = self._event_config.reconnect_delay_seconds
@@ -613,9 +612,6 @@ class CollectorService:
         result: Dict[str, Any] = {}
         ip = led_entry.get("ip")
         if ip:
-            # Run pings in parallel if we have many devices to avoid blocking
-            # For now, simple optimization: reduce timeout/count if many failures detected
-            # Future: use asyncio or ThreadPoolExecutor for pings
             reachable, rtt_ms = self._pinger.ping(ip)
             result["reachable"] = reachable
             if rtt_ms is not None:

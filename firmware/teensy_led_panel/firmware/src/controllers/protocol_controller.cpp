@@ -20,7 +20,7 @@ void ProtocolController::poll(uint32_t now) {
 
     // Check for binary frame start
     if (serial_.peek() == START_MARKER) {
-        if (serial_.available() >= LED_FRAME_SIZE) {
+        if (serial_.available() >= static_cast<int>(LED_FRAME_SIZE)) {
             handleBinaryFrame(now);
         }
         return;
@@ -75,6 +75,37 @@ void ProtocolController::handleBinaryFrame(uint32_t now) {
 void ProtocolController::handleLine(const String &line, uint32_t now) {
     (void)now;
 
+    // Check if it's a JSON frame (starts with '{')
+    if (line[0] == '{') {
+        DeserializationError error = deserializeJson(jsonDoc_, line);
+        
+        if (error) {
+            sendErr("JSON_PARSE_ERROR");
+            return;
+        }
+
+        JsonArray leds = jsonDoc_["leds"];
+        if (leds.isNull()) {
+            sendErr("INVALID_FRAME");
+            return;
+        }
+
+        for (JsonVariant v : leds) {
+            uint8_t i = v["i"];
+            uint8_t h = v["h"];
+            float a = v["a"];
+            uint8_t t = v["t"];
+            
+            stateMachine_.updateLedState(i, h, a, t);
+        }
+        
+        stateMachine_.resetError(); // Valid frame = heartbeat
+        // Optional: send ACK for frame, or stay silent to reduce traffic
+        // sendAck("FRAME"); 
+        return;
+    }
+
+    // Legacy/Simple text commands
     if (line == "READY") {
         stateMachine_.requestReady();
         sendAck("READY");

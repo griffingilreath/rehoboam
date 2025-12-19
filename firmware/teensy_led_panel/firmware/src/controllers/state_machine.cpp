@@ -65,12 +65,32 @@ void StateMachine::updateLeds(const std::array<LedData, LED_COUNT> &data) {
     lastHeartbeatMs_ = millis(); // Valid data implies heartbeat
 }
 
+void StateMachine::updateLedState(uint8_t index, uint8_t health, float activity, uint8_t type) {
+    if (index < LED_COUNT) {
+        ledData_[index].health = health;
+        ledData_[index].activityLevel = static_cast<uint8_t>(activity * 255.0f);
+        ledData_[index].activityType = type;
+        lastHeartbeatMs_ = millis();
+    }
+}
+
 CRGB *StateMachine::ledBuffer() {
     return leds_.data();
 }
 
 bool StateMachine::isFrameReady() const {
     return frameReady_;
+}
+
+CRGB StateMachine::getHealthColor(uint8_t healthCode) {
+    switch (healthCode) {
+        case 0: return COLOR_OFF;
+        case 1: return COLOR_OK;
+        case 2: return COLOR_WARN;
+        case 3: return COLOR_ERR;
+        case 4: return COLOR_UNK;
+        default: return CRGB::Blue;
+    }
 }
 
 void StateMachine::resolveState(uint32_t now) {
@@ -88,8 +108,7 @@ void StateMachine::resolveState(uint32_t now) {
     }
 
     if (errorActive_) {
-        // TODO: switch to error handler
-        // For now, just flash red
+        // Error flash: red
         if ((now / 500) % 2 == 0) {
             std::fill(leds_.begin(), leds_.end(), CRGB::Red);
         } else {
@@ -116,7 +135,7 @@ void StateMachine::resolveState(uint32_t now) {
 }
 
 void StateMachine::stepActiveState(uint32_t now) {
-    if (errorActive_ || currentState_ == BaseState::Startup) {
+    if (errorActive_ || alarmActive_ || currentState_ == BaseState::Startup) {
         return; 
     }
     
@@ -135,15 +154,7 @@ void StateMachine::stepActiveState(uint32_t now) {
 void StateMachine::renderLive(uint32_t now) {
     for (size_t i = 0; i < LED_COUNT; i++) {
         const auto &data = ledData_[i];
-        CRGB baseColor = COLOR_OFF;
-        
-        switch (data.health) {
-            case 1: baseColor = COLOR_OK; break;
-            case 2: baseColor = COLOR_WARN; break;
-            case 3: baseColor = COLOR_ERR; break;
-            case 4: baseColor = COLOR_UNK; break;
-            default: baseColor = COLOR_OFF; break;
-        }
+        CRGB baseColor = getHealthColor(data.health);
 
         // Apply activity modulation
         // Higher activity = faster pulse or brighter flash
@@ -155,16 +166,17 @@ void StateMachine::renderLive(uint32_t now) {
              float speed = 1.0f + (data.activityLevel / 32.0f);
              uint8_t brightness = beatsin8(10 * speed, 50, 255); // min 50, max 255
              
-             // If activity type indicates a "block" or "event", maybe tint?
-             // For now, keep it simple: just modulate brightness
-             
              leds_[i] = baseColor;
              leds_[i].nscale8(brightness);
+             
+             // If very high activity, flash white occasionally
+             if (data.activityLevel > 200 && (now % 200 < 50)) {
+                 leds_[i] = CRGB::White;
+             }
         } else {
-             // Solid color if no activity
+             // Solid color if no activity, slightly dimmed
              leds_[i] = baseColor;
-             // Dim it slightly if just static to save power?
-             // leds_[i].nscale8(200);
+             leds_[i].nscale8(200);
         }
     }
 }
