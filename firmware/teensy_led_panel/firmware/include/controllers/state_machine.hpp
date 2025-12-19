@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <queue>
 
 #include <FastLED.h>
 
@@ -53,6 +54,11 @@ private:
 
     // Track timestamps
     uint32_t lastHeartbeatMs_;
+    
+    // Notifications
+    std::queue<NotificationPayload> notificationQueue_;
+    bool notificationActive_;
+    uint32_t notificationEndMs_;
 };
 
 } // namespace controllers

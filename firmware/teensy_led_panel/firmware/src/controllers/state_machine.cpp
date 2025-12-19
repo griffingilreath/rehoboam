@@ -19,7 +19,9 @@ StateMachine::StateMachine()
       alarmActive_{false},
       errorActive_{false},
       frameReady_{false},
-      lastHeartbeatMs_{0} {}
+      lastHeartbeatMs_{0},
+      notificationActive_{false},
+      notificationEndMs_{0} {}
 
 void StateMachine::init() {
     std::fill(leds_.begin(), leds_.end(), CRGB::Black);
@@ -43,8 +45,8 @@ void StateMachine::requestState(BaseState target) {
     baseState_ = target;
 }
 
-void StateMachine::triggerNotification(const NotificationPayload &) {
-    // TODO: enqueue notification
+void StateMachine::triggerNotification(const NotificationPayload &payload) {
+    notificationQueue_.push(payload);
 }
 
 void StateMachine::triggerAlarm(const AlarmPayload &) {
@@ -118,6 +120,34 @@ void StateMachine::resolveState(uint32_t now) {
         return;
     }
 
+    // Process Notifications
+    if (notificationActive_) {
+        if (now >= notificationEndMs_) {
+            notificationActive_ = false;
+        }
+    }
+    if (!notificationActive_ && !notificationQueue_.empty()) {
+        const auto &payload = notificationQueue_.front();
+        notificationEndMs_ = now + payload.ttlMs;
+        notificationActive_ = true;
+        notificationQueue_.pop();
+    }
+
+    if (notificationActive_) {
+        // Notification animation: Pulse Blue/Cyan
+        // Using built-in FastLED beatsin8 for smooth pulsing
+        uint8_t brightness = beatsin8(60, 100, 255); 
+        CRGB color = CRGB::Blue;
+        if ((now / 200) % 2 == 0) color = CRGB::Cyan;
+        
+        std::fill(leds_.begin(), leds_.end(), color);
+        for(auto &led : leds_) {
+            led.nscale8(brightness);
+        }
+        frameReady_ = true;
+        return;
+    }
+
     if (currentState_ == BaseState::Startup) {
         if (startupReady_) {
             currentState_ = baseState_;
@@ -135,7 +165,7 @@ void StateMachine::resolveState(uint32_t now) {
 }
 
 void StateMachine::stepActiveState(uint32_t now) {
-    if (errorActive_ || alarmActive_ || currentState_ == BaseState::Startup) {
+    if (errorActive_ || alarmActive_ || currentState_ == BaseState::Startup || notificationActive_) {
         return; 
     }
     
