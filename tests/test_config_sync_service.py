@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest.mock import MagicMock
 from pathlib import Path
 
 import yaml
@@ -12,12 +13,16 @@ class FakeHAClient:
     def __init__(self, values):
         self._values = values
 
-    def read_entity_state(self, entity_id: str) -> str:
+    def read_state(self, entity_id: str) -> str:
         return self._values.get(entity_id, f"value-for-{entity_id}")
+        
+    async def read_state_async(self, session, entity_id: str):
+        val = self._values.get(entity_id, f"value-for-{entity_id}")
+        return {"state": val}
 
 
-class ConfigSyncServiceTest(unittest.TestCase):
-    def test_config_sync_writes_led_config(self):
+class ConfigSyncServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_config_sync_writes_led_config_async(self):
         data_dir = Path(self._tmpdir())
         cfg = {
             "data_dir": str(data_dir),
@@ -37,7 +42,9 @@ class ConfigSyncServiceTest(unittest.TestCase):
 
         config = load_service_config(cfg_path, RunnerOverrides(data_dir=data_dir))
         service = ConfigSyncService(config)
-        service._client = FakeHAClient(  # type: ignore[attr-defined]
+        
+        # Mock the client
+        service._client = FakeHAClient(
             {
                 "device_0_name": "Rack Switch",
                 "device_0_ip": "192.168.1.10",
@@ -47,11 +54,13 @@ class ConfigSyncServiceTest(unittest.TestCase):
             }
         )
 
-        service.sync_once()
+        mock_session = MagicMock()
+        await service.sync_once_async(mock_session)
 
         payload = json.loads((data_dir / "led_config.json").read_text(encoding="utf-8"))
         self.assertEqual(payload["schema_version"], "1.0")
         self.assertEqual(payload["leds"][0]["name"], "Rack Switch")
+        self.assertEqual(payload["leds"][0]["ip"], "192.168.1.10")
 
     def _tmpdir(self) -> str:
         from tempfile import TemporaryDirectory
@@ -63,4 +72,3 @@ class ConfigSyncServiceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

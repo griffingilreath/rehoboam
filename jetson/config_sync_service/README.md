@@ -7,7 +7,7 @@ Synchronizes LED metadata from Home Assistant helper entities into the Jetson's 
 ## Prerequisites
 
 - Python 3.9+ on the Jetson (or dev machine if running remotely).
-- `pip install -r jetson/requirements.txt` (installs `requests` + `PyYAML`).
+- `pip install -r jetson/requirements.txt` (installs `aiohttp`, `requests` + `PyYAML`).
 - Home Assistant URL reachable from the Jetson.
 - Long-lived access token with permission to read the helper entities (Profile → Long-Lived Access Tokens).
 - Helper entities created (e.g. `input_text.led0_name`, `input_text.led0_ip`, etc.) and exposed on a dashboard for easy editing.
