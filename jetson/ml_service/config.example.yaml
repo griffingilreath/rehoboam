@@ -8,6 +8,7 @@ poll_interval_seconds: 5
 history_window_seconds: 900
 baseline_days: 7
 zscore_threshold: 2.5
+active_led_threshold: 0.3
 # Baseline options:
 # - baseline_bucket: "global" compares against all recent history; "daypart" compares morning/afternoon/evening/night separately.
 # - baseline_method: "standard" uses mean + population stdev; "robust" uses median + MAD-derived scale.
