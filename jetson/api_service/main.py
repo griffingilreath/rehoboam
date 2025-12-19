@@ -21,7 +21,7 @@ from jetson.common.service_runner import RunnerOverrides, run_service
 from jetson.common.json_store import atomic_write_json
 
 
-DEFAULT_CONFIG_PATH = "jetson/api_service/config.yaml"
+DEFAULT_CONFIG_PATH = str(Path(__file__).parent / "config.yaml")
 DEFAULT_LED_CONFIG_FILENAME = "led_config.json"
 DEFAULT_CANONICAL_FILENAME = "canonical_state.json"
 DEFAULT_HISTORY_FILENAME = "history.json"

@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict

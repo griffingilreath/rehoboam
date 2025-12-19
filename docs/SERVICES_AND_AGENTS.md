@@ -5,9 +5,9 @@ This document describes each service/agent in detail so implementations can be g
 All Jetson services are expected to be:
 
 - Written in **Python 3**.
-- Runnable as `python main.py`.
+- Runnable as `python main.py` (from the service directory or root).
 - Configurable via:
-  - A simple `config.yaml` or environment variables, and
+  - A simple `config.yaml` or environment variables (defaults to `config.yaml` in the service directory).
   - Shared JSON files in a `data/` directory (or similar).
 - Graceful if dependencies (HA, Pi-hole, serial device) are not yet available.
 
