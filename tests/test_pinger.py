@@ -26,5 +26,38 @@ Approximate round trip times in milli-seconds:
         rtt = Pinger._parse_rtt_ms(output)
         self.assertIsNone(rtt)
 
+    def test_linux_iputils_full(self):
+        output = """
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=115 time=13.4 ms
+
+--- 8.8.8.8 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 13.425/13.425/13.425/0.000 ms
+"""
+        self.assertAlmostEqual(Pinger._parse_rtt_ms(output), 13.425)
+
+    def test_linux_busybox(self):
+        output = """
+PING 8.8.8.8 (8.8.8.8): 56 data bytes
+64 bytes from 8.8.8.8: seq=0 ttl=115 time=13.4 ms
+
+--- 8.8.8.8 ping statistics ---
+1 packets transmitted, 1 packets received, 0% packet loss
+round-trip min/avg/max = 13.425/13.425/13.425 ms
+"""
+        self.assertAlmostEqual(Pinger._parse_rtt_ms(output), 13.425)
+
+    def test_mac_bsd(self):
+        output = """
+PING 8.8.8.8 (8.8.8.8): 56 data bytes
+64 bytes from 8.8.8.8: icmp_seq=0 ttl=115 time=13.425 ms
+
+--- 8.8.8.8 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 13.425/13.425/13.425/0.000 ms
+"""
+        self.assertAlmostEqual(Pinger._parse_rtt_ms(output), 13.425)
+
 if __name__ == '__main__':
     unittest.main()
