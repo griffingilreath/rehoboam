@@ -50,6 +50,9 @@ Home Assistant + Pi-hole -> config_sync_service -> led_config.json
                                |
 collector_service -> raw_state.json -> state_engine_service -> canonical_state.json
                                                             |-> history.json -> ml_service -> divergence.json
+                                                            |-> cognition_service -> cognition.json
+                                                            |-> cognition_service -> ai_recommendations.json -> notification_service -> HA actionable notifications
+                                                            |-> feedback_service -> feedback.json
                                                             |-> led_encoder_service -> Teensy
                                                             |-> api_service -> dashboards/e-ink
 ```
@@ -60,6 +63,10 @@ collector_service -> raw_state.json -> state_engine_service -> canonical_state.j
 - `canonical_state.json` - Processed LED states (health, activity levels)
 - `history.json` - Time-series record of all canonical snapshots
 - `divergence.json` - ML anomaly scores and recommendations
+- `cognition.json` - External orchestrator cognition feed (agents/decisions/approvals)
+- `ai_recommendations.json` - Structured AI suggestions (for notifications + learning)
+- `feedback.json` - Approve/decline feedback captured from HA actionable notifications
+- `notifications_sent.json` - Notification ledger for dedupe + tracking (notification_service)
 - `service_health.json` - Service heartbeat status
 - `events.json` - Normalized Home Assistant events
 
@@ -117,6 +124,12 @@ flowchart LR
     RawState --> StateEngine
     StateEngine --> Canonical[canonical_state.json]
     StateEngine --> History[history.json]
+    Canonical --> CognitionSvc[cognition_service]
+    CognitionSvc --> Cognition[cognition.json]
+    CognitionSvc --> AIRecs[ai_recommendations.json]
+    AIRecs --> NotifySvc[notification_service]
+    EventsLog --> FeedbackSvc[feedback_service]
+    FeedbackSvc --> Feedback[feedback.json]
     History --> MLService
     MLService --> Divergence[divergence.json]
     Canonical --> Encoder[led_encoder_service]

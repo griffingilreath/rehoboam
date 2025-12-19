@@ -42,6 +42,9 @@ Repeat for each service you want running continuously.
 - `rehoboam-led-encoder.service`
 - `rehoboam-api.service`
 - `rehoboam-ml.service` (optional but needed for `/divergence`)
+- `rehoboam-cognition.service` (optional; writes `cognition.json` + `ai_recommendations.json`)
+- `rehoboam-notifications.service` (optional; sends actionable HA notifications)
+- `rehoboam-feedback.service` (optional; writes `feedback.json` from HA notification actions)
 
 Each unit sets the working directory to `${REHOBOAM_HOME}` and runs the service via the virtualenv’s Python interpreter. Adjust the ExecStart lines if you package the code differently.
 

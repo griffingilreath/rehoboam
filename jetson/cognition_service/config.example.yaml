@@ -1,0 +1,30 @@
+data_dir: ./data
+poll_interval_seconds: 10
+logging:
+  level: INFO
+
+# External "cognition" source (e.g., HASS-AI-Orchestrator running somewhere on your LAN)
+orchestrator:
+  base_url: ${ORCHESTRATOR_BASE_URL}
+  timeout_seconds: 5
+  verify_ssl: true
+
+# Option B: generate structured suggestions (recommendations) without executing actions.
+suggestions:
+  enabled: false
+  # "external_orchestrator_chat" will call /api/chat and ask for JSON-only recommendations.
+  # "rules" will synthesize suggestions from existing local signals (divergence + context).
+  mode: external_orchestrator_chat
+  chat_endpoint: /api/chat
+  max_recommendations: 5
+  cooldown_seconds: 900
+
+# Optional: describe your main users/spaces so suggestions can target the right person.
+user_profiles: []
+#  - id: user_griffin
+#    name: Griffin
+#    areas: ["living_room", "office"]
+#  - id: user_ethan
+#    name: Ethan
+#    areas: ["bedroom"]
+

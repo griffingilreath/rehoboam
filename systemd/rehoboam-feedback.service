@@ -1,0 +1,16 @@
+[Unit]
+Description=Rehoboam Feedback Service (Approve/Decline Ingestion)
+After=rehoboam-collector.service
+Requires=rehoboam-collector.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rehoboam.env
+WorkingDirectory=${REHOBOAM_HOME}
+ExecStart=${REHOBOAM_VENV}/bin/python jetson/feedback_service/main.py --config jetson/feedback_service/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

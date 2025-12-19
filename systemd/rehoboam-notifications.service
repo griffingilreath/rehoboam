@@ -1,0 +1,17 @@
+[Unit]
+Description=Rehoboam Notification Service (Actionable Suggestions)
+After=network-online.target rehoboam-cognition.service
+Wants=network-online.target
+Requires=rehoboam-cognition.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rehoboam.env
+WorkingDirectory=${REHOBOAM_HOME}
+ExecStart=${REHOBOAM_VENV}/bin/python jetson/notification_service/main.py --config jetson/notification_service/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
