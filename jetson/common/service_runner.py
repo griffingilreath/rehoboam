@@ -7,8 +7,6 @@ import signal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, TypeVar
-import os
-
 from dotenv import load_dotenv
 
 class ServiceProtocol(Protocol):
