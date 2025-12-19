@@ -1,7 +1,6 @@
 import unittest
 import json
 import os
-import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock
