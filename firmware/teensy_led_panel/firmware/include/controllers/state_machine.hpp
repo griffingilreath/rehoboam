@@ -53,6 +53,13 @@ private:
 
     // Track timestamps
     uint32_t lastHeartbeatMs_;
+
+    // Notification state
+    struct ActiveNotification {
+        NotificationPayload payload;
+        uint32_t startMs;
+    };
+    std::optional<ActiveNotification> currentNotification_;
 };
 
 } // namespace controllers

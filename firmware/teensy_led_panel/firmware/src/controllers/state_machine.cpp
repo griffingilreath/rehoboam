@@ -43,8 +43,8 @@ void StateMachine::requestState(BaseState target) {
     baseState_ = target;
 }
 
-void StateMachine::triggerNotification(const NotificationPayload &) {
-    // TODO: enqueue notification
+void StateMachine::triggerNotification(const NotificationPayload &payload) {
+    currentNotification_ = ActiveNotification{payload, millis()};
 }
 
 void StateMachine::triggerAlarm(const AlarmPayload &) {
@@ -107,6 +107,29 @@ void StateMachine::resolveState(uint32_t now) {
         return;
     }
 
+    // Handle Notifications
+    if (currentNotification_) {
+        if (now - currentNotification_->startMs > currentNotification_->payload.ttlMs) {
+            currentNotification_.reset();
+        } else {
+            CRGB color = CRGB::Cyan;
+            // Map simple types to colors
+            const std::string &type = currentNotification_->payload.type;
+            if (type == "error") color = CRGB::Red;
+            else if (type == "success") color = CRGB::Green;
+            else if (type == "warning") color = CRGB::Orange;
+
+            // Fast strobe effect
+            if ((now / 100) % 2 == 0) {
+                 std::fill(leds_.begin(), leds_.end(), color);
+            } else {
+                 std::fill(leds_.begin(), leds_.end(), CRGB::Black);
+            }
+            frameReady_ = true;
+            return;
+        }
+    }
+
     if (errorActive_) {
         // Error flash: red
         if ((now / 500) % 2 == 0) {
@@ -135,7 +158,7 @@ void StateMachine::resolveState(uint32_t now) {
 }
 
 void StateMachine::stepActiveState(uint32_t now) {
-    if (errorActive_ || alarmActive_ || currentState_ == BaseState::Startup) {
+    if (errorActive_ || alarmActive_ || currentState_ == BaseState::Startup || currentNotification_) {
         return; 
     }
     
