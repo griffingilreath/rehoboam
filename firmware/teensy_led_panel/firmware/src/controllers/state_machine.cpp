@@ -116,7 +116,7 @@ void StateMachine::resolveState(uint32_t now) {
 }
 
 void StateMachine::stepActiveState(uint32_t now) {
-    if (errorActive_ || currentState_ == BaseState::Startup) {
+    if (errorActive_ || alarmActive_ || currentState_ == BaseState::Startup) {
         return; 
     }
     
