@@ -1,5 +1,5 @@
 import unittest
-from jetson.collector_service.main import Pinger, PingConfig
+from jetson.collector_service.main import Pinger
 
 class TestPinger(unittest.TestCase):
     def test_parse_rtt_linux(self):
