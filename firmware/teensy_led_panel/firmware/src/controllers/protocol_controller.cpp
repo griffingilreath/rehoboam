@@ -148,6 +148,24 @@ void ProtocolController::handleLine(const String &line, uint32_t now) {
         return;
     }
 
+    if (line.startsWith("NOTIFY:")) {
+        String remainder = line.substring(7);
+        int separatorIdx = remainder.indexOf(':');
+
+        if (separatorIdx != -1) {
+            String typeStr = remainder.substring(0, separatorIdx);
+            String ttlStr = remainder.substring(separatorIdx + 1);
+
+            NotificationPayload payload;
+            payload.type = typeStr.c_str();
+            payload.ttlMs = ttlStr.toInt();
+
+            stateMachine_.triggerNotification(payload);
+            sendAck("NOTIFY");
+            return;
+        }
+    }
+
     sendErr("UNHANDLED");
 }
 
