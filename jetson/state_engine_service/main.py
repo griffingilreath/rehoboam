@@ -58,6 +58,7 @@ class ServiceConfig:
     history_filename: str = DEFAULT_HISTORY_FILENAME
     history_max_entries: int = 1800
     history_retention_seconds: Optional[int] = 86400
+    history_flush_interval_seconds: float = 60.0
     log_level: str = "INFO"
 
     @property
@@ -92,6 +93,8 @@ class StateEngineService:
         self._stop_requested = False
         self._health = ServiceHealthTracker(config.data_dir)
         self._identity = ServiceIdentity(name="state_engine_service")
+        self._history_buffer: List[Dict[str, Any]] = []
+        self._last_history_flush = time.monotonic()
 
     def request_stop(self, *_: Any) -> None:
         logging.info("Stop requested; finishing current computation")
@@ -109,6 +112,8 @@ class StateEngineService:
             if run_once:
                 break
             wait_for_next_cycle(started, self._config.poll_interval_seconds)
+        
+        self._flush_history()
 
     def process_once(self) -> None:
         led_config = self._load_json(self._config.led_config_path)
@@ -232,12 +237,24 @@ class StateEngineService:
     def _record_history(self, entry: Dict[str, Any]) -> None:
         if not self._config.history_enabled:
             return
+        
+        if "schema_version" not in entry:
+            entry = {**entry, "schema_version": CANONICAL_SCHEMA_VERSION}
+            
+        self._history_buffer.append(entry)
+        
+        now = time.monotonic()
+        if (now - self._last_history_flush >= self._config.history_flush_interval_seconds) or \
+           (len(self._history_buffer) >= 50):
+            self._flush_history()
+
+    def _flush_history(self) -> None:
+        if not self._history_buffer:
+            return
+
         path = self._config.history_path
-        
-        # Optimization: Don't read full history every time if just appending
-        # For now, we read full history to enforce retention limits (rolling window)
-        # Future: Use a proper time-series DB (InfluxDB/SQLite) for long-term storage
-        
+        logging.debug("Flushing %d history entries to %s", len(self._history_buffer), path)
+
         existing = load_json(path, {"schema_version": HISTORY_SCHEMA_VERSION, "entries": []})
         if isinstance(existing, dict):
             entries: List[Dict[str, Any]] = list(existing.get("entries") or [])
@@ -245,16 +262,23 @@ class StateEngineService:
             entries = list(existing)
         else:
             entries = []
-        if "schema_version" not in entry:
-            entry = {**entry, "schema_version": CANONICAL_SCHEMA_VERSION}
-        entries.append(entry)
+
+        entries.extend(self._history_buffer)
+
+        # Use the timestamp of the last buffered entry as the reference point for retention
+        last_ts = self._history_buffer[-1].get("timestamp", time.time())
         if self._config.history_retention_seconds:
-            cutoff = entry["timestamp"] - self._config.history_retention_seconds
+            cutoff = last_ts - self._config.history_retention_seconds
             entries = [item for item in entries if item.get("timestamp", 0) >= cutoff]
+            
         if self._config.history_max_entries:
             entries = entries[-self._config.history_max_entries:]
+            
         payload = {"schema_version": HISTORY_SCHEMA_VERSION, "entries": entries}
         atomic_write_json(path, payload)
+        
+        self._history_buffer.clear()
+        self._last_history_flush = time.monotonic()
 
 
 def load_service_config(path: Path, overrides: RunnerOverrides | None = None) -> ServiceConfig:
@@ -281,6 +305,7 @@ def load_service_config(path: Path, overrides: RunnerOverrides | None = None) ->
         history_filename=data.get("history_filename", DEFAULT_HISTORY_FILENAME),
         history_max_entries=int(data.get("history_max_entries", 1800)),
         history_retention_seconds=int(history_retention) if history_retention is not None else None,
+        history_flush_interval_seconds=float(data.get("history_flush_interval_seconds", 60.0)),
         log_level=log_level,
     )
     return config
