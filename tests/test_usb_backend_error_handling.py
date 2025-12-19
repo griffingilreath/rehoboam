@@ -14,7 +14,10 @@ class TestUSBBackendErrorHandling(unittest.TestCase):
         mock_path.return_value.exists.return_value = True
         
         process_mock = MagicMock()
-        process_mock.communicate.side_effect = subprocess.TimeoutExpired(cmd="cmd", timeout=10)
+        process_mock.communicate.side_effect = [
+            subprocess.TimeoutExpired(cmd="cmd", timeout=10),
+            (b"", b"")
+        ]
         process_mock.stdin = MagicMock()
         mock_popen.return_value = process_mock
 
@@ -27,6 +30,8 @@ class TestUSBBackendErrorHandling(unittest.TestCase):
             backend.draw_full(img)
             
         process_mock.kill.assert_called_once()
+        # Verify cleanup call happened
+        self.assertEqual(process_mock.communicate.call_count, 2)
 
     @patch("epaper.backends.usb_backend.shutil.which")
     @patch("epaper.backends.usb_backend.subprocess.Popen")

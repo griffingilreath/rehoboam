@@ -53,6 +53,7 @@ class USBBackend(Backend):
             out, err = proc.communicate(input=buf, timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+            proc.communicate()
             raise RuntimeError(f"USB backend timed out after 10s: {cmd}")
 
         if proc.returncode != 0:
