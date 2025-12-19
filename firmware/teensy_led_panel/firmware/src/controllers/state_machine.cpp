@@ -53,6 +53,12 @@ void StateMachine::resetError() {
     lastHeartbeatMs_ = millis();
 }
 
+void StateMachine::updateLedState(uint8_t index, uint8_t health, float activity, uint8_t type) {
+    if (index < LED_COUNT) {
+        logicalLeds_[index] = {health, activity, type};
+    }
+}
+
 CRGB *StateMachine::ledBuffer() {
     return leds_.data();
 }
@@ -70,7 +76,13 @@ void StateMachine::resolveState(uint32_t now) {
     }
 
     if (errorActive_) {
-        // TODO: switch to error handler
+        // Simple error flash
+        if ((now / 500) % 2 == 0) {
+            std::fill(leds_.begin(), leds_.end(), CRGB::Red);
+        } else {
+            std::fill(leds_.begin(), leds_.end(), CRGB::Black);
+        }
+        frameReady_ = true;
         return;
     }
 
@@ -84,10 +96,52 @@ void StateMachine::resolveState(uint32_t now) {
     currentState_ = baseState_;
 }
 
+CRGB StateMachine::getHealthColor(uint8_t healthCode) {
+    switch (healthCode) {
+        case 0: return CRGB::Green;
+        case 1: return CRGB::Orange;
+        case 2: return CRGB::Red;
+        case 3: return CRGB::Grey;
+        case 4: return CRGB::Purple;
+        default: return CRGB::Blue;
+    }
+}
+
 void StateMachine::stepActiveState(uint32_t now) {
     (void)now;
+    
+    if (errorActive_ || alarmActive_) return;
+
+    if (currentState_ == BaseState::Standby) {
+        std::fill(leds_.begin(), leds_.end(), CRGB::Black);
+        frameReady_ = true;
+        return;
+    }
+
+    // BaseState::Live or Startup
+    for (size_t i = 0; i < LED_COUNT; ++i) {
+        const auto &logical = logicalLeds_[i];
+        CRGB color = getHealthColor(logical.healthCode);
+        
+        // Apply activity pulse
+        // Map activity 0.0-1.0 to a brightness or saturation effect
+        // For simple visualization: high activity = brighter or pulsing
+        if (logical.activityLevel > 0.01f) {
+            uint8_t pulse = beatsin8(60 + (int)(logical.activityLevel * 60), 100, 255);
+            color.nscale8(pulse);
+            
+            // If very high activity, flash white occasionally
+            if (logical.activityLevel > 0.8f && (now % 200 < 50)) {
+                 color = CRGB::White;
+            }
+        } else {
+             // Static dim if no activity
+             color.nscale8(50);
+        }
+        leds_[i] = color;
+    }
+    
     frameReady_ = true;
-    // TODO: invoke concrete animation handlers
 }
 
 } // namespace controllers

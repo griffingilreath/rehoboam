@@ -88,7 +88,8 @@ At a high level:
    - `activity_level`: how busy recently?
    - `activity_type`: what kind of activity?
 4. A **LED encoder** converts canonical state into compact frames and streams them to the **Teensy over serial**.
-5. The **Teensy** applies animation rules and drives the Neopixels.
+5. The **Teensy** parses the JSON frames using `ArduinoJson`, updates its internal state model, and drives the Neopixels using `FastLED` animations.
+
 6. An **API service** on Jetson exposes the canonical state and history to front-end clients:
    - iPhone dashboard.
    - E-ink rendering script.
