@@ -1,5 +1,7 @@
 # epaper
 
+> **DEPRECATED:** This package is the legacy e-ink display system. Active development has moved to [`visualizers/generative_eink/`](../visualizers/generative_eink/), which provides a config-driven, channel-based architecture. This package will be removed once `visualizers/generative_eink/` reaches feature parity. New scenes and backends should be added there, not here.
+
 Modular framework for rendering scenes on the IT8951 e-paper panel (or a fake backend for development).
 
 ## Components

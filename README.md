@@ -4,6 +4,8 @@ Rehoboam Rack is a modern status wall for a compact home lab: a Jetson-powered b
 
 **Physical Setup:** The Jetson Nano/SSD/Teensy live in a 10" rack behind the TV. Two Neopixel strips form a 16-dot panel on the wall, an iPhone sits behind a two-way mirror (running the dashboard), and an IT8951 e-paper display can cycle through richer scenes (activity log, divergence, etc.).
 
+**Home Assistant Config:** The HA configuration (packages, helper definitions, zone automations, municipal integrations) lives in a separate private repository. See [`docs/home_assistant.md`](docs/home_assistant.md) for the integration contract and helper schema.
+
 **Documentation:** Key design docs live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/SERVICES_AND_AGENTS.md`](docs/SERVICES_AND_AGENTS.md). This README summarizes the operational view.
 
 ---
