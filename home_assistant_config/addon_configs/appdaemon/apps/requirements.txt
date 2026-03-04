@@ -1,0 +1,3 @@
+# AppDaemon app pip requirements
+# AppDaemon installs these automatically when the add-on starts.
+requests>=2.32

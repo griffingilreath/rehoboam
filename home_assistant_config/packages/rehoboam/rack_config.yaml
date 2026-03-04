@@ -214,7 +214,7 @@ input_text:
     initial: ""
   led14_ha_availability_entity:
     name: "LED 14 HA Availability Entity"
-    initial: "binary_sensor.plows_active_nearby"
+    initial: "binary_sensor.snow_plows_active_nearby"
   led14_event_entities:
     name: "LED 14 Event Entities"
     initial: "sensor.snow_plow_status"

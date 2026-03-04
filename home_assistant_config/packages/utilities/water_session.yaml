@@ -1,0 +1,344 @@
+###############################################################################
+# PACKAGE: WATER — REAL-TIME SESSION TRACKING
+#
+# What it does:
+#   - Reads the Flume sensor's live flow rate (via the native HA Flume integration)
+#   - Detects when a water session starts and ends (using a configurable gap timer)
+#   - Accumulates volume and duration for the current session in real-time
+#   - Snapshots the last completed session for display
+#   - Alerts on possible overnight leaks
+#
+# Depends on:
+#   - Native Flume HA integration (sensor.flume_sensor_sherman_park_current)
+#   - water_flume.yaml for lifetime totals (this package fires the
+#     water_session_ended event which other automations can optionally listen to)
+#
+# Settings you can adjust via HA UI:
+#   - water_price_usd_per_gal  — cost per gallon
+#   - water_min_flow_gpm       — minimum GPM to start a session
+#   - water_session_gap_seconds — how many seconds of zero flow before ending session
+###############################################################################
+
+# ─── SETTINGS (adjustable via HA UI) ─────────────────────────────────────────
+
+input_number:
+  water_price_usd_per_gal:
+    name: "Water: Price per Gallon"
+    icon: mdi:currency-usd
+    min: 0
+    max: 5
+    step: 0.0001
+    mode: box
+    unit_of_measurement: "USD/gal"
+    initial: 0.0123
+
+  water_min_flow_gpm:
+    name: "Water: Min Flow to Start Session"
+    icon: mdi:water-pump
+    min: 0
+    max: 5
+    step: 0.01
+    unit_of_measurement: "gal/min"
+    initial: 0.10
+
+  water_session_gap_seconds:
+    name: "Water: Session Gap Tolerance"
+    icon: mdi:timer-pause
+    min: 10
+    max: 600
+    step: 5
+    unit_of_measurement: s
+    initial: 60
+
+  # ── Live session state (managed by automations — don't edit manually) ─────
+  water_session_volume_gal:
+    name: "Water Session: Volume"
+    min: 0
+    max: 5000
+    step: 0.001
+    unit_of_measurement: gal
+
+  water_session_runtime_min:
+    name: "Water Session: Duration"
+    min: 0
+    max: 2000
+    step: 0.01
+    unit_of_measurement: min
+
+  # ── Last completed session snapshot ───────────────────────────────────────
+  water_last_session_volume_gal:
+    name: "Water Last Session: Volume"
+    min: 0
+    max: 5000
+    step: 0.001
+    unit_of_measurement: gal
+
+  water_last_session_duration_min:
+    name: "Water Last Session: Duration"
+    min: 0
+    max: 2000
+    step: 0.01
+    unit_of_measurement: min
+
+  water_last_session_avg_flow_gpm:
+    name: "Water Last Session: Avg Flow"
+    min: 0
+    max: 20
+    step: 0.001
+    unit_of_measurement: "gal/min"
+
+input_boolean:
+  water_is_gph:
+    name: "Water: Sensor reports GPH (convert to GPM)"
+    icon: mdi:water-pump
+    initial: false
+
+# ─── PERSISTENT HISTORY ───────────────────────────────────────────────────────
+
+input_datetime:
+  water_session_last_tick:
+    name: "Water Session: Last Tick"
+    has_date: true
+    has_time: true
+
+  water_last_session_end:
+    name: "Water: Last Session Ended"
+    has_date: true
+    has_time: true
+
+# ─── TIMER ────────────────────────────────────────────────────────────────────
+
+timer:
+  water_gap_timer:
+    duration: "00:01:00"
+
+# ─── TEMPLATE SENSORS & BINARY SENSORS ───────────────────────────────────────
+
+template:
+  - sensor:
+      # Normalized flow in GPM (handles GPH→GPM conversion toggle)
+      - name: "Water: Flow (GPM)"
+        unique_id: water_flow_gpm
+        unit_of_measurement: "gal/min"
+        state_class: measurement
+        device_class: volume_flow_rate
+        icon: mdi:water
+        state: >-
+          {% set raw = states('sensor.flume_sensor_sherman_park_current') | float(0) %}
+          {% if is_state('input_boolean.water_is_gph', 'on') %}
+            {{ (raw / 60) | round(3) }}
+          {% else %}
+            {{ raw | round(3) }}
+          {% endif %}
+
+      # Live session metrics
+      - name: "Water Session: Volume"
+        unique_id: water_session_volume_live
+        unit_of_measurement: gal
+        state_class: measurement
+        icon: mdi:water
+        state: "{{ states('input_number.water_session_volume_gal') | float(0) | round(3) }}"
+
+      - name: "Water Session: Duration"
+        unique_id: water_session_runtime_live
+        unit_of_measurement: min
+        state_class: measurement
+        icon: mdi:timer
+        state: "{{ states('input_number.water_session_runtime_min') | float(0) | round(2) }}"
+
+      - name: "Water Session: Avg Flow"
+        unique_id: water_session_avg_flow_live
+        unit_of_measurement: "gal/min"
+        device_class: volume_flow_rate
+        state_class: measurement
+        icon: mdi:speedometer
+        state: >-
+          {% set vol = states('input_number.water_session_volume_gal') | float(0) %}
+          {% set dur = states('input_number.water_session_runtime_min') | float(0) %}
+          {{ (vol / dur) | round(3) if dur > 0 else 0 }}
+
+  - binary_sensor:
+      # True when water is flowing above the configured threshold
+      - name: "Water: In Session"
+        unique_id: water_in_session
+        device_class: running
+        icon: mdi:water
+        state: >-
+          {{ states('sensor.water_flow_gpm') | float(0)
+             >= states('input_number.water_min_flow_gpm') | float(0.1) }}
+
+      # Alert trigger: flow between 1–4 AM for 10+ min (probable leak / running toilet)
+      - name: "Water: Possible Overnight Leak"
+        unique_id: water_possible_overnight_leak
+        device_class: moisture
+        icon: mdi:pipe-leak
+        state: >-
+          {% set flow = states('sensor.water_flow_gpm') | float(0) %}
+          {% set min_flow = states('input_number.water_min_flow_gpm') | float(0.1) %}
+          {{ flow >= min_flow and now().hour >= 1 and now().hour < 5 }}
+
+# ─── UTILITY METERS ──────────────────────────────────────────────────────────
+
+utility_meter:
+  water_daily:
+    source: sensor.water_flow_gpm
+    cycle: daily
+    name: "Water Today"
+  water_weekly:
+    source: sensor.water_flow_gpm
+    cycle: weekly
+    name: "Water This Week"
+  water_monthly:
+    source: sensor.water_flow_gpm
+    cycle: monthly
+    name: "Water This Month"
+
+# ─── AUTOMATIONS ─────────────────────────────────────────────────────────────
+
+automation:
+  # Session start: cancel gap timer and reset live counters
+  - id: water_session_start
+    alias: "[Water] Session start — reset counters"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_in_session
+        from: "off"
+        to: "on"
+    action:
+      - service: timer.cancel
+        target: { entity_id: timer.water_gap_timer }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data: { value: 0 }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data: { value: 0 }
+      - service: input_datetime.set_datetime
+        target: { entity_id: input_datetime.water_session_last_tick }
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  # Accumulate volume every 5 seconds while water is flowing
+  - id: water_session_accumulate
+    alias: "[Water] Session accumulate"
+    mode: single
+    max_exceeded: silent
+    trigger:
+      - platform: time_pattern
+        seconds: "/5"
+    condition:
+      - condition: state
+        entity_id: binary_sensor.water_in_session
+        state: "on"
+    variables:
+      flow_gpm: "{{ states('sensor.water_flow_gpm') | float(0) }}"
+      last_str: "{{ states('input_datetime.water_session_last_tick') }}"
+      now_ts: "{{ as_timestamp(now()) }}"
+      last_ts: >-
+        {% if last_str in ['unknown', 'unavailable', ''] %}
+          {{ now_ts }}
+        {% else %}
+          {{ as_timestamp(as_datetime(last_str)) }}
+        {% endif %}
+      dt_sec: "{{ [[now_ts - last_ts, 0] | max, 60] | min }}"
+      add_gal: "{{ (flow_gpm * (dt_sec / 60)) | float }}"
+      add_min: "{{ (dt_sec / 60) | float }}"
+    action:
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data:
+          value: "{{ (states('input_number.water_session_volume_gal') | float(0) + add_gal) | round(3) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data:
+          value: "{{ (states('input_number.water_session_runtime_min') | float(0) + add_min) | round(2) }}"
+      - service: input_datetime.set_datetime
+        target: { entity_id: input_datetime.water_session_last_tick }
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  # Start gap timer when flow stops; cancel it when flow resumes
+  - id: water_gap_timer_control
+    alias: "[Water] Gap timer control"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_in_session
+    variables:
+      gap: "{{ states('input_number.water_session_gap_seconds') | int(60) }}"
+    action:
+      - choose:
+          - conditions: "{{ is_state('binary_sensor.water_in_session', 'on') }}"
+            sequence:
+              - service: timer.cancel
+                target: { entity_id: timer.water_gap_timer }
+          - conditions: "{{ is_state('binary_sensor.water_in_session', 'off') }}"
+            sequence:
+              - service: timer.start
+                data:
+                  entity_id: timer.water_gap_timer
+                  duration: "{{ '00:%02d:%02d' | format((gap // 60) % 60, gap % 60) }}"
+
+  # Finalize session when gap timer ends; snapshot stats and fire event
+  - id: water_session_finalize
+    alias: "[Water] Session finalize"
+    mode: queued
+    trigger:
+      - platform: event
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.water_gap_timer
+    variables:
+      vol: "{{ states('input_number.water_session_volume_gal') | float(0) }}"
+      dur: "{{ states('input_number.water_session_runtime_min') | float(0) }}"
+      avg: "{{ (vol / dur) | round(3) if dur > 0 else 0 }}"
+    action:
+      - choose:
+          - conditions: "{{ vol > 0.02 and dur > 0.05 }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_volume_gal }
+                data: { value: "{{ vol | round(3) }}" }
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_duration_min }
+                data: { value: "{{ dur | round(2) }}" }
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_avg_flow_gpm }
+                data: { value: "{{ avg | round(3) }}" }
+              - service: input_datetime.set_datetime
+                target: { entity_id: input_datetime.water_last_session_end }
+                data:
+                  datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+              # Fire event for water_flume.yaml to optionally listen to
+              - event: water_session_ended
+                event_data:
+                  volume_gal: "{{ vol }}"
+                  duration_min: "{{ dur }}"
+                  avg_flow_gpm: "{{ avg }}"
+      # Always reset live counters
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data: { value: 0 }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data: { value: 0 }
+
+  # Alert on overnight leaks (flow for 10+ min between 1–5 AM)
+  - id: water_overnight_leak_alert
+    alias: "[Water] Overnight leak alert"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_possible_overnight_leak
+        to: "on"
+        for:
+          minutes: 10
+    action:
+      - service: notify.notify
+        data:
+          title: "💧 Possible Leak"
+          message: >-
+            Water has been flowing for 10+ minutes between 1–5 AM at
+            {{ states('sensor.water_flow_gpm') }} GPM.
+            Check for a running toilet or open faucet.

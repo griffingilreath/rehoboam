@@ -9,8 +9,8 @@ This directory contains the Home Assistant configuration for the Rehoboam Rack h
 ## Quick Setup
 
 1. **Copy secrets:** `cp secrets.yaml.example secrets.yaml` and fill in all values
-2. **Install Flume integration:** Add via HA → Settings → Integrations → Flume
-3. **Set up Flume sync script:** See _Water_ section below
+2. **Install Flume integration:** Add via HA → Settings → Integrations → Flume (for real-time flow)
+3. **Install AppDaemon add-on:** See _Water / Flume_ section below
 4. **Copy packages to HA:** If using HA OS, place this directory contents at `/config/`
 
 ---
@@ -27,11 +27,13 @@ home_assistant_config/
 ├── packages/
 │   ├── municipal/
 │   │   ├── README.md           # ⚠️ API maintenance guide (read this!)
-│   │   ├── snow_plows.yaml     # Snow plow detection & history
-│   │   ├── trash_recycling.yaml # Garbage & recycling pickup schedule
+│   │   ├── snow_plows.yaml     # Snow plow detection & persistent history
+│   │   ├── trash.yaml          # Garbage pickup schedule (self-contained)
+│   │   ├── recycling.yaml      # Recycling pickup schedule (self-contained)
 │   │   └── leaf_collection.yaml # Leaf collection season & route status
 │   ├── utilities/
-│   │   ├── water.yaml          # Flume water monitoring + lifetime stats
+│   │   ├── water_session.yaml  # Real-time Flume session tracking + leak detection
+│   │   ├── water_flume.yaml    # Daily category sync (AppDaemon) + lifetime totals
 │   │   └── energy.yaml         # Electricity tracking + lifetime costs
 │   ├── rehoboam/
 │   │   └── rack_config.yaml    # LED helpers (synced with Rehoboam rack)
@@ -40,8 +42,13 @@ home_assistant_config/
 │       ├── floor_1.yaml
 │       ├── floor_2.yaml
 │       └── basement.yaml
-└── scripts/
-    └── flume_sync.py           # Daily Flume portal category sync
+└── addon_configs/
+    └── appdaemon/
+        ├── secrets.yaml.example  # AppDaemon credentials template
+        └── apps/
+            ├── apps.yaml         # AppDaemon app registration
+            ├── requirements.txt  # Python deps (requests)
+            └── flume_sync.py     # Daily Flume category sync app
 ```
 
 ---
@@ -51,9 +58,12 @@ home_assistant_config/
 See [`packages/municipal/README.md`](packages/municipal/README.md) for API maintenance details.
 
 Key things to know:
-- **Snow plows** — works automatically, stable ArcGIS endpoint
-- **Trash/recycling** — requires `milwaukee_garbage_url` in secrets.yaml
-- **Leaf collection** ⚠️ — **requires annual URL update each September**
+- **Snow plows** — works automatically, stable ArcGIS endpoint; history persists between storms
+- **Trash** — requires `milwaukee_garbage_url` in `secrets.yaml`
+- **Recycling** — same endpoint as trash, fully independent package
+- **Leaf collection** ⚠️ — **requires annual URL update each September** (prompted automatically on Sep 15)
+
+Each municipal package is fully self-contained — commenting out one file won't break any other.
 
 ---
 
@@ -61,32 +71,69 @@ Key things to know:
 
 ### How it works
 
-Two-part system:
+Three-part system:
 1. **Real-time flow** — via the native HA Flume integration (`sensor.flume_sensor_*`)
-2. **Daily categories** — via `scripts/flume_sync.py` which calls the Flume portal API
+2. **Session tracking** — `water_session.yaml` accumulates flow into per-session stats with a gap timer
+3. **Daily categories** — `water_flume.yaml` + AppDaemon sync app pull category data from the Flume portal
 
-### First-time setup for Flume sync
+### AppDaemon Setup (replaces Mac Mini cron job)
 
-1. Make sure Python 3 is available on your HA system (HA OS has it)
-2. Install `requests`: in HA terminal, run `pip3 install requests`
-3. Add your Flume credentials to the environment or as arguments (see script header)
-4. Test manually: `python3 /config/scripts/flume_sync.py --output /tmp/test.json --verbose`
-5. The daily automation runs at 2:00 AM and accumulates results into lifetime totals
+AppDaemon is a HA add-on with its own Python environment. It runs the Flume sync directly inside HA — no Mac Mini or external cron needed.
 
-### Running it manually (backfill)
+#### 1. Install AppDaemon add-on
+
+In HA: **Settings → Add-ons → Add-on Store → AppDaemon**
+
+#### 2. Configure credentials
 
 ```bash
-# Fetch data for a specific past date
-python3 /config/scripts/flume_sync.py \
-  --output /config/flume_categories.json \
-  --date 2024-01-14 \
-  --token-cache /config/.flume_token_cache.json \
-  --verbose
+# On your HA system (SSH or Terminal add-on):
+cp /config/addon_configs/appdaemon/secrets.yaml.example \
+   /addon_configs/appdaemon/secrets.yaml
+# Edit secrets.yaml and fill in your Flume credentials
 ```
+
+#### 3. Install Python dependency
+
+In the AppDaemon add-on configuration, add to **Python packages**:
+```
+requests>=2.32
+```
+Or place `requirements.txt` in `/addon_configs/appdaemon/apps/` (AppDaemon auto-installs on startup).
+
+#### 4. Copy app files
+
+```bash
+cp /config/addon_configs/appdaemon/apps/flume_sync.py  /addon_configs/appdaemon/apps/
+cp /config/addon_configs/appdaemon/apps/apps.yaml       /addon_configs/appdaemon/apps/
+```
+
+#### 5. Test immediately (optional)
+
+In `apps.yaml`, temporarily set `run_on_startup: true`, restart AppDaemon, then check logs:
+**Settings → Add-ons → AppDaemon → Log**
+
+You should see `[FlumeSyncApp] Sync complete` and `sensor.flume_yesterday_total` appear in HA.
+
+#### 6. Retire the Mac Mini cron job
+
+Once AppDaemon is verified, disable or remove the cron entry on the Mac Mini that called the old `flume_sync.py` script. The AppDaemon app runs at 02:05 AM daily automatically.
+
+### What the sync creates
+
+After each successful run, these sensors appear in HA:
+- `sensor.flume_yesterday_total` — total gallons (with `date` and `synced_at` attributes)
+- `sensor.flume_yesterday_shower` / `toilet` / `faucet` / `irrigation` / `bathtub` / `laundry` / `dishwasher` / `other` / `leak`
+
+The `flume_sync_complete` event fires after each sync, triggering accumulation into lifetime odometers.
 
 ### Lifetime totals
 
-Category totals accumulate in `input_number.water_lifetime_*_gal`. These persist through restarts and are updated once daily after the Flume sync. They can be reset via the HA UI if you want a fresh start.
+Category totals accumulate in `input_number.water_lifetime_*_gal`. These persist through restarts and are updated once daily. Reset via HA UI (Settings → Helpers) if you want a fresh start.
+
+### Sync failure alert
+
+If no sync has run in 24+ hours, a notification fires at 6 AM. Check AppDaemon logs for details.
 
 ---
 
@@ -94,7 +141,7 @@ Category totals accumulate in `input_number.water_lifetime_*_gal`. These persist
 
 Add your Eve Energy (or other) plug entity names to `packages/utilities/energy.yaml`. Look for lines with `# ← update entity name` and replace with your actual sensor entity IDs.
 
-Energy rate is set via `input_number.electricity_price_usd_kwh` in configuration.yaml.
+Energy rate is set via `input_number.electricity_price_usd_kwh` in `configuration.yaml`.
 
 Lifetime totals accumulate daily at midnight into `input_number.energy_lifetime_*_kwh`.
 
@@ -121,7 +168,13 @@ All secrets are in `secrets.yaml` (not committed). See `secrets.yaml.example` fo
 
 | Secret | Used by |
 |--------|---------|
-| `milwaukee_garbage_url` | `trash_recycling.yaml` |
+| `milwaukee_garbage_url` | `trash.yaml`, `recycling.yaml` |
 | `home_latitude` / `home_longitude` | `snow_plows.yaml`, `leaf_collection.yaml` |
-| `flume_client_id/secret/username/password` | `scripts/flume_sync.py` |
 | `electricity_price_usd_kwh` | `configuration.yaml` |
+
+AppDaemon has its own `secrets.yaml` at `/addon_configs/appdaemon/secrets.yaml`:
+
+| Secret | Used by |
+|--------|---------|
+| `flume_client_id` / `flume_client_secret` | `apps/flume_sync.py` |
+| `flume_username` / `flume_password` | `apps/flume_sync.py` |

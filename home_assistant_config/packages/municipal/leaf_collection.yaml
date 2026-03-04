@@ -3,45 +3,46 @@
 #
 # What it does:
 #   - Queries Milwaukee's ArcGIS REST API to find your leaf collection route
-#   - Shows your route number, current status (collected/pending/in-progress),
-#     and whether this is the final collection round for the season
-#   - Tracks the window when you can rake leaves to the curb
-#   - Remembers the last date your route was confirmed collected
-#   - Sends a reminder at season start and when your route is collected
+#   - Shows your route number, current collection status, and whether this is
+#     the final round of the season
+#   - Tracks the open rake-out window (when you can rake leaves to the curb)
+#   - Persists the last confirmed collection date across HA restarts
 #
 # ⚠️  ANNUAL MAINTENANCE REQUIRED:
-#   Milwaukee publishes a NEW ArcGIS dataset every fall with a new URL.
-#   Before each leaf season (mid-September), check:
-#     https://data.milwaukee.gov
-#   Search for "Leaf Collection" and update `leaf_arcgis_layer_url` in HA.
-#   The current default URL was published in 2022 and may no longer be active.
+#   Milwaukee publishes a new ArcGIS dataset each fall (October) with a new URL.
+#   Update the URL from the HA UI: Settings → Helpers → "Leaf: ArcGIS URL"
+#   No YAML editing needed — just paste the new URL into the helper.
+#   You'll receive an HA notification on September 15th as a reminder.
 #
-# Fields from the ArcGIS API:
-#   SANLEAF   — Your leaf route number (e.g., "14A")
-#   Status    — "Collected", "Not Collected", "In Progress", or blank
-#   FinalRound — "Yes" / "No": whether this is the last pass of the season
+#   To find the new URL each fall:
+#     1. Go to https://data.milwaukee.gov
+#     2. Search "Leaf Collection"
+#     3. Open the current year's dataset and copy the FeatureServer query URL
+#
+# ArcGIS route attributes used:
+#   SANLEAF    — Your route number (e.g., "14A")
+#   Status     — "Collected", "Not Collected", "In Progress", or blank
+#   FinalRound — "Yes" / "No" — whether this is the last pass of the season
 ###############################################################################
 
-# ─── CONFIGURABLE SETTINGS ────────────────────────────────────────────────────
-# Update leaf_arcgis_layer_url each fall via the HA UI (Settings → Helpers)
-# without needing to edit any YAML files.
+# ─── CONFIGURABLE SETTINGS (update via HA UI — no YAML edits needed) ─────────
 
 input_text:
-  leaf_arcgis_layer_url:
-    name: "Leaf Collection: ArcGIS Layer URL"
+  leaf_arcgis_url:
+    name: "Leaf: ArcGIS URL"
     initial: >-
       https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/Leaf_Routes_061022_view/FeatureServer/0/query
     max: 500
     icon: mdi:map-marker-path
 
   leaf_season_start:
-    name: "Leaf Collection: Season Start (MM-DD)"
+    name: "Leaf: Season Start (MM-DD)"
     initial: "10-01"
     max: 5
     icon: mdi:calendar-start
 
   leaf_season_end:
-    name: "Leaf Collection: Season End (MM-DD)"
+    name: "Leaf: Season End (MM-DD)"
     initial: "11-20"
     max: 5
     icon: mdi:calendar-end
@@ -55,25 +56,11 @@ input_datetime:
     has_time: false
     icon: mdi:leaf
 
-input_text:
-  leaf_route_id:
-    name: "Leaf: My Route ID"
-    initial: "unknown"
-    max: 20
-    icon: mdi:routes
-
 # ─── REST SENSOR ─────────────────────────────────────────────────────────────
 
 rest:
-  # Queries your address location against the leaf route layer.
-  # Returns the route attributes for your area.
   - resource_template: >-
-      {{ states('input_text.leaf_arcgis_layer_url') }}?f=json
-      &geometry={{ secret('home_longitude') }},{{ secret('home_latitude') }}
-      &geometryType=esriGeometryPoint&inSR=4326
-      &spatialRel=esriSpatialRelIntersects
-      &outFields=SANLEAF,Status,FinalRound
-      &returnGeometry=false
+      {{ states('input_text.leaf_arcgis_url') }}?f=json&geometry={{ secret('home_longitude') }},{{ secret('home_latitude') }}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=SANLEAF,Status,FinalRound&returnGeometry=false
     method: GET
     scan_interval: 21600      # Every 6 hours — data changes at most once per day
     timeout: 30
@@ -101,23 +88,24 @@ template:
         state: >-
           {% set features = state_attr('sensor.mke_leaf_route_raw', 'features') | default([], true) %}
           {% if features %}
-            {{ features[0].attributes.SANLEAF | default('unknown') }}
+            {{ features[0].attributes.SANLEAF | default('unknown', true) }}
           {% else %}
             unknown
           {% endif %}
 
-      # Whether your route has been collected, is in progress, or pending
+      # Current collection status for your route
+      # Raw values from ArcGIS: "Collected", "Not Collected", "In Progress", or blank
       - name: "Leaf: Route Status"
         unique_id: leaf_route_status
         icon: mdi:leaf
         state: >-
           {% set features = state_attr('sensor.mke_leaf_route_raw', 'features') | default([], true) %}
           {% if not features %}
-            No data (check URL or off-season)
+            No data
           {% else %}
-            {% set status = features[0].attributes.Status | default('') | trim %}
-            {% if status == '' or status == 'None' %}
-              Status not yet updated
+            {% set status = features[0].attributes.Status | default('', true) | trim %}
+            {% if status in ['', 'None', 'null'] %}
+              Pending
             {% else %}
               {{ status }}
             {% endif %}
@@ -127,37 +115,38 @@ template:
           final_round: >-
             {% set features = state_attr('sensor.mke_leaf_route_raw', 'features') | default([], true) %}
             {% if features %}
-              {{ features[0].attributes.FinalRound | default('unknown') }}
+              {{ features[0].attributes.FinalRound | default('unknown', true) }}
             {% else %}
               unknown
             {% endif %}
           last_confirmed: "{{ states('input_datetime.leaf_last_confirmed_collection') }}"
 
-      # Combined status for dashboards: season window + route status
+      # Combined status for dashboards — season context + route status in one sensor
       - name: "Leaf: Summary"
         unique_id: leaf_collection_summary
         icon: mdi:leaf-maple
         state: >-
           {% set today = now().date() %}
           {% set year = today.year %}
-
           {% set start_md = states('input_text.leaf_season_start') | default('10-01') %}
           {% set end_md   = states('input_text.leaf_season_end')   | default('11-20') %}
           {% set start = strptime(year ~ '-' ~ start_md, '%Y-%m-%d').date() %}
           {% set end   = strptime(year ~ '-' ~ end_md,   '%Y-%m-%d').date() %}
-
           {% set route_status = states('sensor.leaf_route_status') %}
+          {% set route = states('sensor.leaf_my_route') %}
 
           {% if today < start %}
-            Off-season — raking window opens {{ start.strftime('%-m/%-d') }}
+            Off-season — window opens {{ start.strftime('%-m/%-d') }}
           {% elif today > end %}
             Season over — collection complete for {{ year }}
+          {% elif route_status == 'No data' %}
+            In season — no route data (check ArcGIS URL)
           {% else %}
-            Route {{ states('sensor.leaf_my_route') }}: {{ route_status }}
+            Route {{ route }}: {{ route_status }}
           {% endif %}
 
   - binary_sensor:
-      # True when leaves can be raked to the curb (in the collection window)
+      # True when leaves can be raked to the curb (within the collection window)
       - name: "Leaf: Rake-out Window Open"
         unique_id: leaf_rakeout_window_open
         icon: mdi:leaf
@@ -170,7 +159,7 @@ template:
           {% set end   = strptime(year ~ '-' ~ end_md,   '%Y-%m-%d').date() %}
           {{ start <= today <= end }}
 
-      # True on the day your route is marked "Collected"
+      # True on the day your route status changes to "Collected"
       - name: "Leaf: Route Collected Today"
         unique_id: leaf_route_collected_today
         icon: mdi:check-circle
@@ -181,24 +170,6 @@ template:
 # ─── AUTOMATIONS ─────────────────────────────────────────────────────────────
 
 automation:
-  # Record your route ID whenever it changes (update to non-"unknown")
-  - id: leaf_record_route_id
-    alias: "[Leaf] Record my route ID"
-    mode: single
-    trigger:
-      - platform: state
-        entity_id: sensor.leaf_my_route
-    condition:
-      - condition: template
-        value_template: >-
-          {{ trigger.to_state.state not in ['unknown', 'unavailable', ''] }}
-    action:
-      - service: input_text.set_value
-        target:
-          entity_id: input_text.leaf_route_id
-        data:
-          value: "{{ trigger.to_state.state }}"
-
   # Record confirmed collection date when route status becomes "Collected"
   - id: leaf_record_confirmed_collection
     alias: "[Leaf] Record confirmed collection date"
@@ -207,6 +178,12 @@ automation:
       - platform: state
         entity_id: binary_sensor.leaf_route_collected_today
         to: "on"
+    condition:
+      # Guard: don't re-record if already logged today
+      - condition: template
+        value_template: >-
+          {{ states('input_datetime.leaf_last_confirmed_collection') | default('') !=
+             now().date().isoformat() }}
     action:
       - service: input_datetime.set_datetime
         target:
@@ -214,7 +191,7 @@ automation:
         data:
           date: "{{ now().date().isoformat() }}"
 
-  # Notify when your route has been collected
+  # Notify when your route is collected
   - id: leaf_notify_route_collected
     alias: "[Leaf] Notify — route collected"
     mode: single
@@ -229,12 +206,12 @@ automation:
           title: "🍂 Leaf Route Collected"
           message: >-
             Route {{ states('sensor.leaf_my_route') }} has been collected.
-            {% set final = state_attr('sensor.leaf_route_status', 'final_round') %}
-            {% if final == 'Yes' %}This was the FINAL round for the season.{% endif %}
+            {% set final = state_attr('sensor.leaf_route_status', 'final_round') | default('') | lower %}
+            {% if final == 'yes' %}This was the FINAL collection round of the season.{% endif %}
 
-  # Season-start reminder on Oct 1 (or whatever leaf_season_start is set to)
+  # Season-start notification
   - id: leaf_season_start_reminder
-    alias: "[Leaf] Season start — rake out reminder"
+    alias: "[Leaf] Season start — rake-out window open"
     mode: single
     trigger:
       - platform: state
@@ -244,30 +221,50 @@ automation:
     action:
       - service: notify.notify
         data:
-          title: "🍂 Leaf Season Started"
+          title: "🍂 Leaf Season Open"
           message: >-
-            Leaf collection season is now open.
-            You can rake leaves to the curb.
-            Your route is {{ states('sensor.leaf_my_route') }}.
-            Season ends {{ states('input_text.leaf_season_end') }}.
+            Leaf collection season is open through {{ states('input_text.leaf_season_end') }}.
+            Rake leaves to the curb — your route is {{ states('sensor.leaf_my_route') }}.
 
-  # Annual URL check reminder on September 15th
-  - id: leaf_annual_url_check_reminder
-    alias: "[Leaf] Annual — check ArcGIS URL"
+  # Annual URL check reminder on September 15
+  - id: leaf_annual_url_reminder
+    alias: "[Leaf] Annual — update ArcGIS URL"
     mode: single
     trigger:
       - platform: time
         at: "09:00:00"
     condition:
       - condition: template
-        value_template: >-
-          {{ now().month == 9 and now().day == 15 }}
+        value_template: "{{ now().month == 9 and now().day == 15 }}"
     action:
       - service: notify.notify
         data:
-          title: "🍂 Leaf Season: Update ArcGIS URL"
+          title: "🍂 Leaf Season: Update URL"
           message: >-
-            It's mid-September — time to check if Milwaukee has published a new
-            leaf collection dataset. Go to https://data.milwaukee.gov, search
-            "Leaf Collection", and update the URL in HA under
-            Settings → Helpers → "Leaf Collection: ArcGIS Layer URL".
+            It's mid-September. Check https://data.milwaukee.gov for this year's
+            leaf collection dataset and update the URL in HA:
+            Settings → Helpers → "Leaf: ArcGIS URL"
+
+  # URL health alert: in-season but no route data for more than 2 days
+  - id: leaf_url_health_alert
+    alias: "[Leaf] Alert — no route data in season"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: sensor.mke_leaf_route_raw
+        to: "0"
+        for:
+          hours: 48
+    condition:
+      - condition: state
+        entity_id: binary_sensor.leaf_rakeout_window_open
+        state: "on"
+    action:
+      - service: notify.notify
+        data:
+          title: "🍂 Leaf Data Missing"
+          message: >-
+            It's leaf season but the ArcGIS query has returned no route data for
+            48+ hours. The URL may be outdated.
+            Update it at: Settings → Helpers → "Leaf: ArcGIS URL"
+            Current URL: {{ states('input_text.leaf_arcgis_url') }}

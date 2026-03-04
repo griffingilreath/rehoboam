@@ -1,0 +1,21 @@
+---
+# AppDaemon apps configuration
+# Place this file at /addon_configs/appdaemon/apps/apps.yaml
+
+# ── Flume Water Category Sync ─────────────────────────────────────────────────
+# Runs daily at 02:05 AM, queries Flume portal for yesterday's categorized
+# water usage, and writes sensor.flume_yesterday_* directly into HA.
+#
+# Credentials come from AppDaemon's own secrets.yaml:
+#   /addon_configs/appdaemon/appdaemon.yaml  ← reference !secret here
+#   /addon_configs/appdaemon/secrets.yaml    ← define values here
+#
+# See home_assistant_config/README.md for full setup instructions.
+flume_sync:
+  module: flume_sync
+  class: FlumeSyncApp
+  client_id: !secret flume_client_id
+  client_secret: !secret flume_client_secret
+  username: !secret flume_username
+  password: !secret flume_password
+  run_on_startup: false   # ← Change to true to test immediately on next restart

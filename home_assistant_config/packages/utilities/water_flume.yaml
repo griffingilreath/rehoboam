@@ -1,0 +1,306 @@
+###############################################################################
+# PACKAGE: WATER — FLUME CATEGORIES & LIFETIME TOTALS
+#
+# What it does:
+#   - Consumes category sensors created by the AppDaemon Flume sync app
+#     (sensor.flume_yesterday_shower, sensor.flume_yesterday_toilet, etc.)
+#   - Accumulates daily category totals into lifetime "odometer" counters
+#     that persist across HA restarts
+#   - Provides a lifetime cost calculation based on your configured water rate
+#
+# Depends on:
+#   - AppDaemon Flume sync app (addon_configs/appdaemon/apps/flume_sync.py)
+#     which must be installed and running in the AppDaemon add-on.
+#     See home_assistant_config/README.md for setup instructions.
+#   - water_session.yaml for the water_price_usd_per_gal input_number
+#
+# How data flows:
+#   Flume portal API → AppDaemon (02:05 AM daily)
+#     → fires flume_sync_complete HA event
+#     → automation below accumulates into input_number lifetime totals
+#     → template sensors expose the totals to dashboards / Energy panel
+###############################################################################
+
+# ─── LIFETIME ODOMETERS ───────────────────────────────────────────────────────
+# These input_numbers are the source of truth for all-time usage.
+# They only go up. Reset manually via the HA UI if you want a fresh start.
+
+input_number:
+  water_lifetime_total_gal:
+    name: "Water Lifetime: Total"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_shower_gal:
+    name: "Water Lifetime: Shower"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_toilet_gal:
+    name: "Water Lifetime: Toilet"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_faucet_gal:
+    name: "Water Lifetime: Faucet/Sink"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_dishwasher_gal:
+    name: "Water Lifetime: Dishwasher"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_laundry_gal:
+    name: "Water Lifetime: Laundry"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_irrigation_gal:
+    name: "Water Lifetime: Irrigation/Outdoor"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_bathtub_gal:
+    name: "Water Lifetime: Bathtub"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_other_gal:
+    name: "Water Lifetime: Other"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_leak_gal:
+    name: "Water Lifetime: Leak Detected"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+# ─── TEMPLATE SENSORS ────────────────────────────────────────────────────────
+
+template:
+  - sensor:
+      # ── Yesterday (from AppDaemon-created sensors) ────────────────────────────
+      # AppDaemon creates sensor.flume_yesterday_* directly in HA state machine.
+      # These template sensors just add nice metadata and device_class.
+
+      - name: "Water Yesterday: Total"
+        unique_id: water_yesterday_total
+        unit_of_measurement: gal
+        state_class: total
+        device_class: water
+        icon: mdi:water-circle
+        state: "{{ states('sensor.flume_yesterday_total') | float(0) | round(2) }}"
+        attributes:
+          date: "{{ state_attr('sensor.flume_yesterday_total', 'date') | default('unknown') }}"
+          synced_at: "{{ state_attr('sensor.flume_yesterday_total', 'synced_at') | default('unknown') }}"
+
+      - name: "Water Yesterday: Shower"
+        unique_id: water_yesterday_shower
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:shower
+        state: "{{ states('sensor.flume_yesterday_shower') | float(0) | round(2) }}"
+
+      - name: "Water Yesterday: Toilet"
+        unique_id: water_yesterday_toilet
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:toilet
+        state: "{{ states('sensor.flume_yesterday_toilet') | float(0) | round(2) }}"
+
+      - name: "Water Yesterday: Faucet"
+        unique_id: water_yesterday_faucet
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:water-pump
+        state: "{{ states('sensor.flume_yesterday_faucet') | float(0) | round(2) }}"
+
+      - name: "Water Yesterday: Dishwasher"
+        unique_id: water_yesterday_dishwasher
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:dishwasher
+        state: "{{ states('sensor.flume_yesterday_dishwasher') | float(0) | round(2) }}"
+
+      - name: "Water Yesterday: Laundry"
+        unique_id: water_yesterday_laundry
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:washing-machine
+        state: "{{ states('sensor.flume_yesterday_laundry') | float(0) | round(2) }}"
+
+      - name: "Water Yesterday: Irrigation"
+        unique_id: water_yesterday_irrigation
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:sprinkler
+        state: "{{ states('sensor.flume_yesterday_irrigation') | float(0) | round(2) }}"
+
+      - name: "Water Yesterday: Bathtub"
+        unique_id: water_yesterday_bathtub
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:bathtub
+        state: "{{ states('sensor.flume_yesterday_bathtub') | float(0) | round(2) }}"
+
+      - name: "Water Yesterday: Other"
+        unique_id: water_yesterday_other
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:help-circle
+        state: "{{ states('sensor.flume_yesterday_other') | float(0) | round(2) }}"
+
+      - name: "Water Yesterday: Leak"
+        unique_id: water_yesterday_leak
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:pipe-leak
+        state: "{{ states('sensor.flume_yesterday_leak') | float(0) | round(2) }}"
+
+      # ── Lifetime totals ───────────────────────────────────────────────────────
+
+      - name: "Water Lifetime: Total"
+        unique_id: water_lifetime_total_sensor
+        unit_of_measurement: gal
+        state_class: total_increasing
+        device_class: water
+        icon: mdi:water-circle
+        state: "{{ states('input_number.water_lifetime_total_gal') | float(0) | round(1) }}"
+
+      - name: "Water Lifetime: Cost"
+        unique_id: water_lifetime_cost
+        unit_of_measurement: USD
+        icon: mdi:currency-usd
+        state: >-
+          {% set gal = states('input_number.water_lifetime_total_gal') | float(0) %}
+          {% set rate = states('input_number.water_price_usd_per_gal') | float(0.0123) %}
+          {{ (gal * rate) | round(2) }}
+
+      # Sync status — shows when the last successful Flume sync ran
+      - name: "Flume: Last Sync"
+        unique_id: flume_last_sync
+        icon: mdi:cloud-sync
+        state: >-
+          {% set ts = state_attr('sensor.flume_yesterday_total', 'synced_at') | default('') %}
+          {% if ts %}
+            {{ as_local(as_datetime(ts)).strftime('%-m/%-d %-I:%M %p') }}
+          {% else %}
+            Never synced
+          {% endif %}
+
+# ─── AUTOMATIONS ─────────────────────────────────────────────────────────────
+
+automation:
+  # Accumulate yesterday's categories into lifetime totals.
+  # Triggered by the flume_sync_complete event fired by the AppDaemon app.
+  # Guard: only accumulates once per date to prevent double-counting on restart.
+  - id: flume_accumulate_lifetime_totals
+    alias: "[Flume] Accumulate yesterday into lifetime totals"
+    mode: single
+    trigger:
+      - platform: event
+        event_type: flume_sync_complete
+    variables:
+      sync_date: "{{ trigger.event.data.date }}"
+      cats: "{{ trigger.event.data.categories | default({}) }}"
+      total: "{{ trigger.event.data.total_gallons | float(0) }}"
+      yesterday: "{{ (now().date() - timedelta(days=1)).isoformat() }}"
+    action:
+      # Guard: only accumulate if this is genuinely yesterday's data
+      - condition: template
+        value_template: "{{ sync_date == yesterday }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_total_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_total_gal') | float(0) + total) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_shower_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_shower_gal') | float(0) + cats.get('shower', 0) | float) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_toilet_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_toilet_gal') | float(0) + cats.get('toilet', 0) | float) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_faucet_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_faucet_gal') | float(0) + cats.get('faucet', 0) | float) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_dishwasher_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_dishwasher_gal') | float(0) + cats.get('dishwasher', 0) | float) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_laundry_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_laundry_gal') | float(0) + cats.get('laundry', 0) | float) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_irrigation_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_irrigation_gal') | float(0) + cats.get('irrigation', 0) | float) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_bathtub_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_bathtub_gal') | float(0) + cats.get('bathtub', 0) | float) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_other_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_other_gal') | float(0) + cats.get('other', 0) | float) | round(2) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_leak_gal }
+        data:
+          value: "{{ (states('input_number.water_lifetime_leak_gal') | float(0) + cats.get('leak', 0) | float) | round(2) }}"
+
+  # Alert if Flume sync failed (still no data by 6 AM)
+  - id: flume_sync_failure_alert
+    alias: "[Flume] Alert — sync may have failed"
+    mode: single
+    trigger:
+      - platform: time
+        at: "06:00:00"
+    condition:
+      - condition: template
+        value_template: >-
+          {% set ts = state_attr('sensor.flume_yesterday_total', 'synced_at') | default('') %}
+          {% if not ts %}
+            true
+          {% else %}
+            {{ (now().timestamp() - as_datetime(ts).timestamp()) > 86400 }}
+          {% endif %}
+    action:
+      - service: notify.notify
+        data:
+          title: "💧 Flume Sync Issue"
+          message: >-
+            The Flume daily category sync hasn't run since
+            {{ states('sensor.flume_last_sync') }}.
+            Check AppDaemon logs: Settings → Add-ons → AppDaemon → Log.

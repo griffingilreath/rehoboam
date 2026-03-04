@@ -1,0 +1,152 @@
+###############################################################################
+# PACKAGE: TRASH (GARBAGE COLLECTION)
+#
+# Completely self-contained — no dependency on any other package.
+#
+# What it does:
+#   - Queries Milwaukee's sanitation API for the next garbage pickup date
+#   - Provides days-until counter and a "today" flag for automations/dashboards
+#   - Remembers the last confirmed pickup date across HA restarts
+#   - Sends an evening reminder the night before pickup
+#
+# Setup:
+#   Set milwaukee_garbage_url in secrets.yaml:
+#     milwaukee_garbage_url: "https://itmdapps.milwaukee.gov/DpwServletsPublic/garbage_day?address=2930N39thStreet"
+#
+#   Expected JSON:
+#     { "success": true,
+#       "garbage": { "date": "Monday January 15, 2024", "route": "A3" },
+#       "recycling": { ... } }
+#
+# Maintenance:
+#   See packages/municipal/README.md for troubleshooting the endpoint.
+###############################################################################
+
+rest:
+  # Independent REST sensor — trash.yaml does not share state with recycling.yaml
+  - resource: !secret milwaukee_garbage_url
+    method: GET
+    scan_interval: 14400     # Refresh every 4 hours
+    timeout: 45
+    headers:
+      User-Agent: "Mozilla/5.0 (Home Assistant; Municipal Monitor)"
+    sensor:
+      - name: mke_garbage_api
+        unique_id: mke_garbage_api
+        value_template: >-
+          {% if value_json is mapping and value_json.get('success') %}
+            ok
+          {% else %}
+            error
+          {% endif %}
+        json_attributes:
+          - garbage
+
+# ─── PERSISTENT HISTORY ───────────────────────────────────────────────────────
+
+input_datetime:
+  garbage_last_confirmed_pickup:
+    name: "Garbage: Last Confirmed Pickup"
+    has_date: true
+    has_time: false
+    icon: mdi:trash-can
+
+# ─── TEMPLATE SENSORS & BINARY SENSORS ───────────────────────────────────────
+
+template:
+  - sensor:
+
+      - name: "Garbage: Next Pickup"
+        unique_id: garbage_next_pickup
+        device_class: timestamp
+        icon: mdi:trash-can
+        state: >-
+          {% set g = state_attr('sensor.mke_garbage_api', 'garbage') %}
+          {% if g and g.get('date') %}
+            {% set dt = strptime(g['date'] | trim, "%A %B %d, %Y") %}
+            {{ dt.replace(tzinfo=now().tzinfo).isoformat() }}
+          {% else %}
+            unknown
+          {% endif %}
+        attributes:
+          route: >-
+            {% set g = state_attr('sensor.mke_garbage_api', 'garbage') %}
+            {{ g.get('route', 'unknown') if g else 'unknown' }}
+          api_status: "{{ states('sensor.mke_garbage_api') }}"
+
+      - name: "Garbage: Days Until Pickup"
+        unique_id: garbage_days_until_pickup
+        unit_of_measurement: "days"
+        icon: mdi:calendar-clock
+        state: >-
+          {% set g = state_attr('sensor.mke_garbage_api', 'garbage') %}
+          {% if g and g.get('date') %}
+            {% set dt = strptime(g['date'] | trim, "%A %B %d, %Y") %}
+            {{ (dt.date() - now().date()).days }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      - name: "Garbage: Last Confirmed Pickup"
+        unique_id: garbage_last_confirmed_sensor
+        device_class: timestamp
+        icon: mdi:clock-check
+        state: >-
+          {% set d = states('input_datetime.garbage_last_confirmed_pickup') %}
+          {% if d not in ['unknown', 'unavailable', ''] %}
+            {{ as_datetime(d).replace(tzinfo=now().tzinfo).isoformat() }}
+          {% else %}
+            unknown
+          {% endif %}
+
+  - binary_sensor:
+      - name: "Garbage: Pickup Today"
+        unique_id: garbage_pickup_today
+        icon: mdi:trash-can
+        state: >-
+          {{ states('sensor.garbage_days_until_pickup') | int(99) == 0 }}
+
+# ─── AUTOMATIONS ─────────────────────────────────────────────────────────────
+
+automation:
+  # Record pickup date on the day of collection (waits 30 min to confirm it's really today)
+  - id: garbage_record_confirmed_pickup
+    alias: "[Garbage] Record confirmed pickup date"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.garbage_pickup_today
+        to: "on"
+        for:
+          minutes: 30
+    condition:
+      # Guard: don't re-record if already recorded today
+      - condition: template
+        value_template: >-
+          {{ states('input_datetime.garbage_last_confirmed_pickup') | default('') !=
+             now().date().isoformat() }}
+    action:
+      - service: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.garbage_last_confirmed_pickup
+        data:
+          date: "{{ now().date().isoformat() }}"
+
+  # Evening reminder the day BEFORE pickup
+  - id: garbage_evening_reminder
+    alias: "[Garbage] Evening reminder — put bins out"
+    mode: single
+    trigger:
+      - platform: time
+        at: "20:00:00"
+    condition:
+      - condition: template
+        value_template: "{{ states('sensor.garbage_days_until_pickup') | int(99) == 1 }}"
+    action:
+      - service: notify.notify
+        data:
+          title: "🗑️ Garbage Tomorrow"
+          message: >-
+            Garbage pickup is tomorrow
+            (route {{ state_attr('sensor.garbage_next_pickup', 'route') | default('unknown') }}).
+            Put the bin out tonight.

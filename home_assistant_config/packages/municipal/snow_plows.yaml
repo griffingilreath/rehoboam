@@ -2,36 +2,35 @@
 # PACKAGE: SNOW PLOWS
 #
 # What it does:
-#   - Queries Milwaukee's ArcGIS REST API for plow activity within 100m of home
-#   - Provides a plain-English status with timestamp of last service
-#   - Runs a separate 5km health-check query so we know if the API itself is down
-#   - Remembers the last date plows were confirmed (survives HA restarts)
-#   - Sends a notification when a plow is detected nearby
+#   - Queries Milwaukee's ArcGIS REST API for plow activity within 250m of home
+#   - Remembers the last confirmed plow time/road in persistent helpers — the
+#     "last plow" is NEVER erased by the API returning no data between storms
+#   - Status falls back to the persisted history when the API has no current data
+#   - Uses substring road matching ("39TH", "LOCUST") instead of exact names —
+#     tolerates ArcGIS name format variations ("N 39TH ST" vs "N 39TH STREET")
+#   - A separate 500m neighborhood sensor shows general area activity
+#   - Runs a 5km system health check so we can tell "no plows" from "API down"
+#
+# Setup:
+#   Set in secrets.yaml:
+#     home_latitude: "43.072241"
+#     home_longitude: "-87.961785"
 #
 # Maintenance:
 #   If the ArcGIS endpoint changes, search "SnowRoutes_PublicView" on
-#   https://data.milwaukee.gov and update the resource_template URLs below.
-#
-# Coordinates:
-#   home_latitude and home_longitude are defined in secrets.yaml
+#   https://data.milwaukee.gov and update the resource_template URLs.
 ###############################################################################
 
 rest:
 
-  # ── PRIMARY: Plows within 100m ───────────────────────────────────────────────
-  # Returns road names + last-serviced timestamps for nearby roads.
-  # A result of 0 features could mean "no plows" OR "API is down" — we use
-  # the health-check sensor below to disambiguate.
+  # ── PRIMARY: Plows within 250m ───────────────────────────────────────────────
+  # 250m radius (~¾ block) gives a fuzzy match — catches plows on your block
+  # even if they're slightly outside a strict 100m window. Returns road names
+  # and last-serviced timestamps.
   - resource_template: >-
-      https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query?f=json
-      &geometry={{ secret('home_longitude') }},{{ secret('home_latitude') }}
-      &geometryType=esriGeometryPoint&inSR=4326
-      &spatialRel=esriSpatialRelIntersects
-      &distance=100&units=esriSRUnit_Meter
-      &outFields=roadname,lastserviced
-      &returnGeometry=false
+      https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query?f=json&geometry={{ secret('home_longitude') }},{{ secret('home_latitude') }}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&distance=250&units=esriSRUnit_Meter&outFields=roadname,lastserviced&returnGeometry=false
     method: GET
-    scan_interval: 600        # Every 10 minutes during active monitoring
+    scan_interval: 600
     timeout: 30
     sensor:
       - name: mke_snow_nearby_raw
@@ -45,16 +44,31 @@ rest:
         json_attributes:
           - features
 
-  # ── HEALTH CHECK: Any plows within 5km? ─────────────────────────────────────
-  # If this returns 0 during winter, the ArcGIS API is likely down or inactive.
-  # Checked only hourly to avoid hammering the endpoint.
+  # ── NEIGHBORHOOD: Plows within 500m ──────────────────────────────────────────
+  # Shows how many roads within ~1.5 blocks have been serviced. Useful for
+  # knowing crews are in the area before they hit your specific street.
   - resource_template: >-
-      https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query?f=json
-      &geometry={{ secret('home_longitude') }},{{ secret('home_latitude') }}
-      &geometryType=esriGeometryPoint&inSR=4326
-      &spatialRel=esriSpatialRelIntersects
-      &distance=5000&units=esriSRUnit_Meter
-      &returnCountOnly=true
+      https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query?f=json&geometry={{ secret('home_longitude') }},{{ secret('home_latitude') }}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&distance=500&units=esriSRUnit_Meter&outFields=roadname,lastserviced&returnGeometry=false
+    method: GET
+    scan_interval: 900
+    timeout: 30
+    sensor:
+      - name: mke_snow_neighborhood_raw
+        unique_id: mke_snow_neighborhood_raw
+        value_template: >-
+          {% if value_json is mapping and 'features' in value_json %}
+            {{ value_json.features | count }}
+          {% else %}
+            0
+          {% endif %}
+        json_attributes:
+          - features
+
+  # ── HEALTH CHECK: Any plows city-wide (5km)? ─────────────────────────────────
+  # If this returns 0 count during winter, the ArcGIS API itself is down.
+  # Checked hourly — used to suppress false "no plows" warnings.
+  - resource_template: >-
+      https://services1.arcgis.com/5ly0cVV70qsN8Soc/arcgis/rest/services/SnowRoutes_PublicView/FeatureServer/0/query?f=json&geometry={{ secret('home_longitude') }},{{ secret('home_latitude') }}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&distance=5000&units=esriSRUnit_Meter&returnCountOnly=true
     method: GET
     scan_interval: 3600
     timeout: 30
@@ -69,6 +83,8 @@ rest:
           {% endif %}
 
 # ─── PERSISTENT HISTORY ───────────────────────────────────────────────────────
+# These NEVER get reset by the API returning no data. They only update when a
+# plow is newly detected and explicitly recorded by the automation below.
 
 input_datetime:
   snow_last_confirmed_plow:
@@ -81,15 +97,17 @@ input_text:
   snow_last_road_plowed:
     name: "Snow: Last Road Plowed"
     initial: "unknown"
-    icon: mdi:road-variant
     max: 100
+    icon: mdi:road-variant
 
 # ─── TEMPLATE SENSORS & BINARY SENSORS ───────────────────────────────────────
 
 template:
   - sensor:
 
-      # Nearest plowed road name (prefers our specific streets, falls back to first result)
+      # Nearest relevant road from the 250m query.
+      # Uses SUBSTRING matching — "39TH" matches "N 39TH ST", "N 39TH STREET", etc.
+      # Falls back to the first road returned if neither preferred street is found.
       - name: "Snow: Nearest Road"
         unique_id: snow_nearest_road
         icon: mdi:road-variant
@@ -98,86 +116,137 @@ template:
           {% if not features %}
             No roads found
           {% else %}
-            {% set roads = features | map(attribute='attributes.roadname') | list %}
-            {% set preferred = ['N 39TH ST', 'W LOCUST ST'] %}
-            {% set match = preferred | select('in', roads) | list %}
-            {{ match[0] if match else roads[0] }}
+            {% set roads = features | map(attribute='attributes.roadname') | select('string') | list %}
+            {% set preferred_keywords = ['39TH', 'LOCUST'] %}
+            {% set matches = namespace(road='') %}
+            {% for kw in preferred_keywords %}
+              {% if not matches.road %}
+                {% for r in roads %}
+                  {% if kw in r and not matches.road %}
+                    {% set matches.road = r %}
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+            {{ matches.road if matches.road else roads[0] }}
           {% endif %}
 
-      # Human-readable timestamp of when our nearest road was last serviced
-      - name: "Snow: Last Serviced"
-        unique_id: snow_last_serviced
+      # Timestamp when our nearest road was last serviced (from live API data only).
+      # Returns unknown when there's no API data — that's expected between storms.
+      - name: "Snow: Last Serviced (API)"
+        unique_id: snow_last_serviced_api
         device_class: timestamp
         icon: mdi:clock-outline
         state: >-
           {% set features = state_attr('sensor.mke_snow_nearby_raw', 'features') | default([], true) %}
           {% set road = states('sensor.snow_nearest_road') %}
-          {% if not features or road in ['No roads found', 'unknown', 'unavailable'] %}
+          {% if not features or road == 'No roads found' %}
             unknown
           {% else %}
             {% set match = features | selectattr('attributes.roadname', 'equalto', road) | list %}
             {% if match %}
-              {% set ms = match[0].attributes.lastserviced %}
-              {% if ms in [none, '', 0] %}
-                unknown
+              {% set ms = match[0].attributes.lastserviced | default(0) %}
+              {% if ms and ms | int > 0 %}
+                {{ as_local(as_datetime(ms | int / 1000)).isoformat() }}
               {% else %}
-                {{ as_local(as_datetime(ms / 1000)).isoformat() }}
+                unknown
               {% endif %}
             {% else %}
               unknown
             {% endif %}
           {% endif %}
 
-      # Plain-English status: what's happening right now
+      # Neighborhood activity count (how many roads within 500m have been recently serviced)
+      - name: "Snow: Neighborhood Roads Plowed"
+        unique_id: snow_neighborhood_roads_plowed
+        unit_of_measurement: "roads"
+        icon: mdi:map-marker-radius
+        state: >-
+          {{ states('sensor.mke_snow_neighborhood_raw') | int(0) }}
+
+      # ── PRIMARY STATUS SENSOR ─────────────────────────────────────────────────
+      # This is the "never forget" sensor. It shows live status when the API has
+      # data, and falls back to the PERSISTED history when it doesn't.
+      # The persisted history (input_datetime) only updates when a plow is
+      # actually detected — it never gets erased by quiet API responses.
       - name: "Snow: Status"
         unique_id: snow_plow_status
         icon: mdi:snowplow
         state: >-
           {% set api_health = states('sensor.mke_snow_api_health') %}
-          {% set last = states('sensor.snow_last_serviced') %}
+          {% set api_ts = states('sensor.snow_last_serviced_api') %}
+          {% set persisted = states('input_datetime.snow_last_confirmed_plow') %}
           {% set is_winter = now().month in [11, 12, 1, 2, 3] %}
 
+          {# 1. API error during winter — surface the error clearly #}
           {% if api_health == 'error' %}
-            API Error
+            API Error — check connection
           {% elif api_health == 'no_data' and is_winter %}
-            API Offline (no city-wide data)
-          {% elif last in ['unknown', 'unavailable', 'none', ''] %}
-            No recent activity
-          {% else %}
-            {% set delta_min = (now() - as_datetime(last)).total_seconds() / 60 %}
+            API Offline (city-wide data unavailable)
+
+          {# 2. Live API has a timestamp — show relative time #}
+          {% elif api_ts not in ['unknown', 'unavailable'] %}
+            {% set delta_min = (now() - as_datetime(api_ts)).total_seconds() / 60 %}
             {% if delta_min < 10 %}
               Active — plowing now
             {% elif delta_min < 30 %}
               Active — plowed {{ delta_min | int }} min ago
             {% elif delta_min < 120 %}
-              Recent — plowed {{ (delta_min / 60) | round(1) }} hr ago
+              Recent — {{ (delta_min / 60) | round(1) }} hr ago
             {% else %}
-              Last: {{ as_datetime(last).strftime('%a %-I:%M %p') }}
+              Last API: {{ as_datetime(api_ts).strftime('%a %-m/%-d %-I:%M %p') }}
             {% endif %}
+
+          {# 3. No live API data — fall back to persisted history #}
+          {% elif persisted not in ['unknown', 'unavailable', ''] %}
+            {% set days = (now().date() - as_datetime(persisted).date()).days %}
+            {% if days == 0 %}
+              Last confirmed: earlier today ({{ as_datetime(persisted).strftime('%-I:%M %p') }})
+            {% elif days == 1 %}
+              Last confirmed: yesterday ({{ states('input_text.snow_last_road_plowed') }})
+            {% else %}
+              Last confirmed: {{ days }} days ago on {{ as_datetime(persisted).strftime('%-m/%-d') }}
+            {% endif %}
+
+          {# 4. Nothing at all #}
+          {% else %}
+            No plow data recorded yet this season
           {% endif %}
         attributes:
-          road: "{{ states('sensor.snow_nearest_road') }}"
+          nearest_road: "{{ states('sensor.snow_nearest_road') }}"
+          last_confirmed_plow: "{{ states('input_datetime.snow_last_confirmed_plow') }}"
+          last_road_plowed: "{{ states('input_text.snow_last_road_plowed') }}"
+          neighborhood_roads: "{{ states('sensor.snow_neighborhood_roads_plowed') }}"
           api_health: "{{ states('sensor.mke_snow_api_health') }}"
-          last_confirmed_date: "{{ states('input_datetime.snow_last_confirmed_plow') }}"
 
   - binary_sensor:
-      # True when a plow has been active within the last 30 minutes
+      # Active if a plow has been seen within the last 30 minutes (live API data)
       - name: "Snow: Plows Active Nearby"
         unique_id: snow_plows_active_nearby
         device_class: motion
         icon: mdi:snowplow
         state: >-
-          {% set last = states('sensor.snow_last_serviced') %}
-          {% if last in ['unknown', 'unavailable'] %}
+          {% set api_ts = states('sensor.snow_last_serviced_api') %}
+          {% if api_ts in ['unknown', 'unavailable'] %}
             false
           {% else %}
-            {{ (now() - as_datetime(last)).total_seconds() < 1800 }}
+            {{ (now() - as_datetime(api_ts)).total_seconds() < 1800 }}
           {% endif %}
+
+      # True when plows are active anywhere within ~1.5 blocks (neighborhood)
+      - name: "Snow: Plows In Neighborhood"
+        unique_id: snow_plows_in_neighborhood
+        device_class: motion
+        icon: mdi:map-marker-radius
+        state: >-
+          {{ states('sensor.mke_snow_neighborhood_raw') | int(0) > 0 }}
 
 # ─── AUTOMATIONS ─────────────────────────────────────────────────────────────
 
 automation:
-  # Record the date/time and road whenever a plow is confirmed active
+  # Record confirmed plow activity.
+  # Guard conditions prevent recording "No roads found" as a road name,
+  # and prevent overwriting a valid plow time with a spurious trigger.
   - id: snow_record_plow_activity
     alias: "[Snow] Record confirmed plow activity"
     mode: single
@@ -186,6 +255,12 @@ automation:
       - platform: state
         entity_id: binary_sensor.snow_plows_active_nearby
         to: "on"
+    condition:
+      # Only record when we have a real road name
+      - condition: template
+        value_template: >-
+          {{ states('sensor.snow_nearest_road') not in
+             ['No roads found', 'unknown', 'unavailable', ''] }}
     action:
       - service: input_datetime.set_datetime
         target:
@@ -198,7 +273,7 @@ automation:
         data:
           value: "{{ states('sensor.snow_nearest_road') }}"
 
-  # Notify once when plows become active nearby
+  # Notify once per storm event when plows become active nearby
   - id: snow_notify_plows_nearby
     alias: "[Snow] Notify — plows active"
     mode: single
@@ -213,5 +288,5 @@ automation:
         data:
           title: "❄️ Snow Plow Active"
           message: >-
-            A plow was detected on {{ states('sensor.snow_nearest_road') }}.
-            Last serviced: {{ states('sensor.snow_last_serviced') }}.
+            A plow was detected near {{ states('sensor.snow_nearest_road') }}.
+            Neighborhood activity: {{ states('sensor.snow_neighborhood_roads_plowed') }} road(s) serviced within 500m.
