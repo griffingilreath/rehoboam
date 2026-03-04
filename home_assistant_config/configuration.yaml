@@ -1,0 +1,29 @@
+homeassistant:
+  packages: !include_dir_named packages
+
+default_config:
+
+frontend:
+  themes: !include_dir_merge_named themes
+
+automation: !include automations.yaml
+script:     !include scripts.yaml
+scene:      !include scenes.yaml
+
+# Global Inputs (not package-specific)
+input_number:
+  electricity_price_usd_kwh:
+    name: Electricity Price
+    min: 0
+    max: 2
+    step: 0.0001
+    unit_of_measurement: "USD/kWh"
+    mode: box
+    initial: 0.1838
+
+homeassistant:
+  customize_glob:
+    "sensor.eve_energy_*_energy*":
+      device_class: energy
+      state_class: total_increasing
+      unit_of_measurement: kWh

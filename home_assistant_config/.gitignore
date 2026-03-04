@@ -1,0 +1,21 @@
+# Never commit secrets
+secrets.yaml
+
+# HA runtime files
+.storage/
+.cloud/
+.HA_VERSION
+home-assistant.log
+home-assistant_v2.db
+home-assistant_v2.db-wal
+home-assistant_v2.db-shm
+OZW_Log.txt
+
+# Flume sync runtime
+.flume_token_cache.json
+flume_categories.json
+logs/
+
+# Python cache
+__pycache__/
+*.pyc

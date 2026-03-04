@@ -1,0 +1,39 @@
+###############################################################################
+# PACKAGE: SECOND FLOOR (UPPER)
+#
+# Rooms:
+#   - Sonal's Bedroom
+#   - Sonal's Studio
+#   - Griffin's Studio
+#   - Griffin's Bath
+#   - Griffin's Closet
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# LIGHT GROUPS
+# -----------------------------------------------------------------------------
+light:
+  - platform: group
+    name: "Sonal Studio Lights"
+    entities:
+      # - light.sonal_studio_main
+
+  - platform: group
+    name: "Griffin Studio Lights"
+    entities:
+      # - light.griffin_studio_main
+
+# -----------------------------------------------------------------------------
+# CLIMATE / SENSORS
+# -----------------------------------------------------------------------------
+template:
+  - sensor:
+      - name: "2nd Floor Avg Temp"
+        unique_id: floor_2_avg_temp
+        unit_of_measurement: "°F"
+        state: >
+          {% set temps = [
+            states('sensor.sonal_bedroom_temp')|float(0),
+            states('sensor.griffin_studio_temp')|float(0)
+          ] %}
+          {{ (temps | sum / temps | count) | round(1) }}

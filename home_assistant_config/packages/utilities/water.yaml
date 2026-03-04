@@ -1,0 +1,661 @@
+###############################################################################
+# PACKAGE: WATER USAGE
+#
+# What it does:
+#   1. REAL-TIME FLOW  — reads the Flume sensor (via native HA integration)
+#      and tracks active water sessions (volume, duration, avg flow).
+#
+#   2. DAILY CATEGORIES — flume_sync.py fetches yesterday's categorized data
+#      (shower, toilet, etc.) from the Flume portal API at 2 AM each day.
+#      HA reads the output JSON file and exposes it as sensors.
+#
+#   3. LIFETIME TOTALS — accumulates category gallons in input_numbers that
+#      survive HA restarts. These are the "odometer" stats.
+#
+# Prerequisites:
+#   - Native Flume integration installed in HA (provides sensor.flume_sensor_*)
+#   - flume_sync.py configured in shell_command (see below)
+#   - Credentials in secrets.yaml (flume_client_id, flume_client_secret, etc.)
+#
+# Shell command to add to configuration.yaml (or a package):
+#   shell_command:
+#     flume_sync: >-
+#       python3 /config/scripts/flume_sync.py
+#       --client-id {{ secret('flume_client_id') }}
+#       --client-secret {{ secret('flume_client_secret') }}
+#       --username {{ secret('flume_username') }}
+#       --password {{ secret('flume_password') }}
+#       --output /config/flume_categories.json
+#       --token-cache /config/.flume_token_cache.json
+###############################################################################
+
+# ─── SETTINGS (adjust via HA UI) ─────────────────────────────────────────────
+
+input_number:
+  water_price_usd_per_gal:
+    name: "Water: Price per Gallon"
+    icon: mdi:currency-usd
+    min: 0
+    max: 5
+    step: 0.0001
+    mode: box
+    unit_of_measurement: "USD/gal"
+    initial: 0.0123   # Set your local rate
+
+  water_min_flow_gpm:
+    name: "Water: Min Flow to Start Session"
+    icon: mdi:water-pump
+    min: 0
+    max: 5
+    step: 0.01
+    unit_of_measurement: "gal/min"
+    initial: 0.10
+
+  water_session_gap_seconds:
+    name: "Water: Session Gap Tolerance"
+    icon: mdi:timer-pause
+    min: 10
+    max: 600
+    step: 5
+    unit_of_measurement: s
+    initial: 60
+
+  # ── Live session data (managed by automations) ──
+  water_session_volume_gal:
+    name: "Water Session: Volume"
+    min: 0
+    max: 5000
+    step: 0.001
+    unit_of_measurement: gal
+
+  water_session_runtime_min:
+    name: "Water Session: Duration"
+    min: 0
+    max: 2000
+    step: 0.01
+    unit_of_measurement: min
+
+  # ── Last session snapshot (for display/history) ──
+  water_last_session_volume_gal:
+    name: "Water Last Session: Volume"
+    min: 0
+    max: 5000
+    step: 0.001
+    unit_of_measurement: gal
+
+  water_last_session_duration_min:
+    name: "Water Last Session: Duration"
+    min: 0
+    max: 2000
+    step: 0.01
+    unit_of_measurement: min
+
+  water_last_session_avg_flow_gpm:
+    name: "Water Last Session: Avg Flow"
+    min: 0
+    max: 20
+    step: 0.001
+    unit_of_measurement: "gal/min"
+
+input_boolean:
+  water_is_gph:
+    name: "Water: Sensor reports GPH (convert to GPM)"
+    icon: mdi:water-pump
+    initial: false
+
+# ─── PERSISTENT HISTORY ───────────────────────────────────────────────────────
+
+input_datetime:
+  water_session_last_tick:
+    name: "Water Session: Last Tick"
+    has_date: true
+    has_time: true
+
+  water_last_session_end:
+    name: "Water: Last Session Ended"
+    has_date: true
+    has_time: true
+
+# ─── LIFETIME TOTALS (the "odometer") ────────────────────────────────────────
+# These accumulate from the Flume portal's categorized data.
+# Reset only if you want to start fresh; they survive HA restarts.
+
+input_number:
+  water_lifetime_total_gal:
+    name: "Water Lifetime: Total"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_shower_gal:
+    name: "Water Lifetime: Shower"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_toilet_gal:
+    name: "Water Lifetime: Toilet"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_faucet_gal:
+    name: "Water Lifetime: Faucet/Sink"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_dishwasher_gal:
+    name: "Water Lifetime: Dishwasher"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_laundry_gal:
+    name: "Water Lifetime: Laundry"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_irrigation_gal:
+    name: "Water Lifetime: Irrigation/Outdoor"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_bathtub_gal:
+    name: "Water Lifetime: Bathtub"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_other_gal:
+    name: "Water Lifetime: Other"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+  water_lifetime_leak_gal:
+    name: "Water Lifetime: Leak"
+    min: 0
+    max: 10000000
+    step: 0.1
+    unit_of_measurement: gal
+
+# ─── SHELL COMMAND ────────────────────────────────────────────────────────────
+
+shell_command:
+  flume_sync: >-
+    python3 /config/scripts/flume_sync.py
+    --client-id "{{ states('input_text.flume_client_id_placeholder') }}"
+    --output /config/flume_categories.json
+    --token-cache /config/.flume_token_cache.json
+
+# NOTE: Pass Flume credentials as environment variables instead.
+# In /config/.env (if using HA OS) or via the HA terminal addon, set:
+#   FLUME_CLIENT_ID=xxx
+#   FLUME_CLIENT_SECRET=xxx
+#   FLUME_USERNAME=xxx
+#   FLUME_PASSWORD=xxx
+# Then the shell_command simplifies to:
+#   flume_sync: "python3 /config/scripts/flume_sync.py --output /config/flume_categories.json --token-cache /config/.flume_token_cache.json"
+
+# ─── DAILY CATEGORIES (from flume_sync.py output) ────────────────────────────
+
+command_line:
+  # Reads the JSON file that flume_sync.py writes each night.
+  # Shows "success" when data is fresh, "stale" if over 26 hours old.
+  - sensor:
+      name: "Flume: Yesterday Categories"
+      unique_id: flume_yesterday_categories
+      command: "cat /config/flume_categories.json 2>/dev/null || echo '{\"status\": \"no_data\", \"categories\": {}, \"total_gallons\": 0, \"date\": \"unknown\"}'"
+      value_template: >-
+        {% set d = value_json.get('date', 'unknown') %}
+        {% set fetched = value_json.get('fetched_at', '') %}
+        {% if value_json.get('status') == 'success' and d != 'unknown' %}
+          {% if fetched %}
+            {% set age_h = (now().timestamp() - as_datetime(fetched).timestamp()) / 3600 %}
+            {{ 'success' if age_h < 26 else 'stale' }}
+          {% else %}
+            success
+          {% endif %}
+        {% else %}
+          {{ value_json.get('status', 'no_data') }}
+        {% endif %}
+      json_attributes:
+        - date
+        - fetched_at
+        - total_gallons
+        - categories
+        - device_id
+      scan_interval: 1800   # Re-read the file every 30 min
+
+# ─── TEMPLATE SENSORS ────────────────────────────────────────────────────────
+
+template:
+  - sensor:
+      # ── Real-time flow ───────────────────────────────────────────────────────
+
+      # Normalized flow in GPM (handles GPH→GPM conversion if needed)
+      - name: "Water: Flow (GPM)"
+        unique_id: water_flow_gpm
+        unit_of_measurement: "gal/min"
+        state_class: measurement
+        device_class: volume_flow_rate
+        icon: mdi:water
+        state: >-
+          {% set raw = states('sensor.flume_sensor_sherman_park_current') | float(0) %}
+          {% if is_state('input_boolean.water_is_gph', 'on') %}
+            {{ (raw / 60) | round(3) }}
+          {% else %}
+            {{ raw | round(3) }}
+          {% endif %}
+
+      # ── Live session ─────────────────────────────────────────────────────────
+
+      - name: "Water Session: Volume"
+        unique_id: water_session_volume_live
+        unit_of_measurement: gal
+        state_class: measurement
+        icon: mdi:water
+        state: "{{ states('input_number.water_session_volume_gal') | float(0) | round(3) }}"
+
+      - name: "Water Session: Duration"
+        unique_id: water_session_runtime_live
+        unit_of_measurement: min
+        state_class: measurement
+        icon: mdi:timer
+        state: "{{ states('input_number.water_session_runtime_min') | float(0) | round(2) }}"
+
+      - name: "Water Session: Avg Flow"
+        unique_id: water_session_avg_flow_live
+        unit_of_measurement: "gal/min"
+        device_class: volume_flow_rate
+        state_class: measurement
+        icon: mdi:speedometer
+        state: >-
+          {% set vol = states('input_number.water_session_volume_gal') | float(0) %}
+          {% set dur = states('input_number.water_session_runtime_min') | float(0) %}
+          {{ (vol / dur) | round(3) if dur > 0 else 0 }}
+
+      # ── Yesterday categories (from flume_sync.py) ────────────────────────────
+
+      - name: "Water Yesterday: Total"
+        unique_id: water_yesterday_total
+        unit_of_measurement: gal
+        state_class: total
+        device_class: water
+        icon: mdi:water-circle
+        state: >-
+          {{ state_attr('sensor.flume_yesterday_categories', 'total_gallons') | float(0) | round(2) }}
+        attributes:
+          date: "{{ state_attr('sensor.flume_yesterday_categories', 'date') }}"
+          fetched_at: "{{ state_attr('sensor.flume_yesterday_categories', 'fetched_at') }}"
+
+      # One sensor per category (used for HA Energy Dashboard and dashboards)
+      - name: "Water Yesterday: Shower"
+        unique_id: water_yesterday_shower
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:shower
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('shower', 0) | float | round(2) }}
+
+      - name: "Water Yesterday: Toilet"
+        unique_id: water_yesterday_toilet
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:toilet
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('toilet', 0) | float | round(2) }}
+
+      - name: "Water Yesterday: Faucet"
+        unique_id: water_yesterday_faucet
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:water-pump
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('faucet', 0) | float | round(2) }}
+
+      - name: "Water Yesterday: Dishwasher"
+        unique_id: water_yesterday_dishwasher
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:dishwasher
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('dishwasher', 0) | float | round(2) }}
+
+      - name: "Water Yesterday: Laundry"
+        unique_id: water_yesterday_laundry
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:washing-machine
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('laundry', 0) | float | round(2) }}
+
+      - name: "Water Yesterday: Irrigation"
+        unique_id: water_yesterday_irrigation
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:sprinkler
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('irrigation', 0) | float | round(2) }}
+
+      - name: "Water Yesterday: Bathtub"
+        unique_id: water_yesterday_bathtub
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:bathtub
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('bathtub', 0) | float | round(2) }}
+
+      - name: "Water Yesterday: Other"
+        unique_id: water_yesterday_other
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:help-circle
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('other', 0) | float | round(2) }}
+
+      - name: "Water Yesterday: Leak"
+        unique_id: water_yesterday_leak
+        unit_of_measurement: gal
+        state_class: measurement
+        device_class: water
+        icon: mdi:pipe-leak
+        state: >-
+          {{ (state_attr('sensor.flume_yesterday_categories', 'categories') or {}).get('leak', 0) | float | round(2) }}
+
+      # ── Lifetime totals ───────────────────────────────────────────────────────
+
+      - name: "Water Lifetime: Total"
+        unique_id: water_lifetime_total_sensor
+        unit_of_measurement: gal
+        state_class: total_increasing
+        device_class: water
+        icon: mdi:water-circle
+        state: "{{ states('input_number.water_lifetime_total_gal') | float(0) | round(1) }}"
+
+      - name: "Water Lifetime: Cost"
+        unique_id: water_lifetime_cost
+        unit_of_measurement: USD
+        icon: mdi:currency-usd
+        state: >-
+          {% set gal = states('input_number.water_lifetime_total_gal') | float(0) %}
+          {% set rate = states('input_number.water_price_usd_per_gal') | float(0.0123) %}
+          {{ (gal * rate) | round(2) }}
+
+  - binary_sensor:
+      - name: "Water: In Session"
+        unique_id: water_in_session
+        device_class: running
+        icon: mdi:water
+        state: >-
+          {{ states('sensor.water_flow_gpm') | float(0)
+             >= states('input_number.water_min_flow_gpm') | float(0.1) }}
+
+      - name: "Water: Possible Leak"
+        unique_id: water_possible_leak
+        device_class: moisture
+        icon: mdi:pipe-leak
+        state: >-
+          {% set flow = states('sensor.water_flow_gpm') | float(0) %}
+          {% set min_flow = states('input_number.water_min_flow_gpm') | float(0.1) %}
+          {{ flow >= min_flow and now().hour >= 1 and now().hour <= 4 }}
+
+# ─── TIMER ────────────────────────────────────────────────────────────────────
+
+timer:
+  water_gap_timer:
+    duration: "00:01:00"
+
+# ─── UTILITY METERS (day/week/month from real-time flow) ─────────────────────
+
+utility_meter:
+  water_daily:
+    source: sensor.water_flow_gpm
+    cycle: daily
+    name: "Water Today (GPM meter)"
+
+  water_weekly:
+    source: sensor.water_flow_gpm
+    cycle: weekly
+    name: "Water This Week (GPM meter)"
+
+  water_monthly:
+    source: sensor.water_flow_gpm
+    cycle: monthly
+    name: "Water This Month (GPM meter)"
+
+# ─── AUTOMATIONS ─────────────────────────────────────────────────────────────
+
+automation:
+  # 1. Flume daily sync at 2 AM (after portal upload completes)
+  - id: flume_daily_category_sync
+    alias: "[Flume] Daily category sync at 2 AM"
+    mode: single
+    trigger:
+      - platform: time
+        at: "02:00:00"
+    action:
+      - service: shell_command.flume_sync
+      # Wait briefly then refresh the sensor
+      - delay: "00:00:30"
+      - service: homeassistant.update_entity
+        target:
+          entity_id: sensor.flume_yesterday_categories
+
+  # 2. Accumulate yesterday's categories into lifetime totals (runs after sync)
+  - id: flume_accumulate_lifetime_totals
+    alias: "[Flume] Accumulate yesterday into lifetime totals"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: sensor.flume_yesterday_categories
+        to: "success"
+    variables:
+      cats: "{{ state_attr('sensor.flume_yesterday_categories', 'categories') or {} }}"
+      total: "{{ state_attr('sensor.flume_yesterday_categories', 'total_gallons') | float(0) }}"
+    action:
+      # Only accumulate if date matches yesterday (prevents re-accumulating on restart)
+      - condition: template
+        value_template: >-
+          {{ state_attr('sensor.flume_yesterday_categories', 'date') ==
+             (now().date() - timedelta(days=1)).isoformat() }}
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_total_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_total_gal') | float(0) + total }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_shower_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_shower_gal') | float(0) + cats.get('shower', 0) | float }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_toilet_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_toilet_gal') | float(0) + cats.get('toilet', 0) | float }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_faucet_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_faucet_gal') | float(0) + cats.get('faucet', 0) | float }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_dishwasher_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_dishwasher_gal') | float(0) + cats.get('dishwasher', 0) | float }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_laundry_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_laundry_gal') | float(0) + cats.get('laundry', 0) | float }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_irrigation_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_irrigation_gal') | float(0) + cats.get('irrigation', 0) | float }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_bathtub_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_bathtub_gal') | float(0) + cats.get('bathtub', 0) | float }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_other_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_other_gal') | float(0) + cats.get('other', 0) | float }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_lifetime_leak_gal }
+        data:
+          value: "{{ states('input_number.water_lifetime_leak_gal') | float(0) + cats.get('leak', 0) | float }}"
+
+  # 3. Session start: reset live counters
+  - id: water_session_start
+    alias: "[Water] Session start — reset counters"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_in_session
+        from: "off"
+        to: "on"
+    action:
+      - service: timer.cancel
+        target: { entity_id: timer.water_gap_timer }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data: { value: 0 }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data: { value: 0 }
+      - service: input_datetime.set_datetime
+        target: { entity_id: input_datetime.water_session_last_tick }
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  # 4. Accumulate volume every 5 seconds while flowing
+  - id: water_session_accumulate
+    alias: "[Water] Session accumulate"
+    mode: single
+    max_exceeded: silent
+    trigger:
+      - platform: time_pattern
+        seconds: "/5"
+    condition:
+      - condition: state
+        entity_id: binary_sensor.water_in_session
+        state: "on"
+    variables:
+      flow_gpm: "{{ states('sensor.water_flow_gpm') | float(0) }}"
+      last_str: "{{ states('input_datetime.water_session_last_tick') }}"
+      now_ts: "{{ as_timestamp(now()) }}"
+      last_ts: >-
+        {% if last_str in ['unknown', 'unavailable', ''] %}
+          {{ now_ts }}
+        {% else %}
+          {{ as_timestamp(as_datetime(last_str)) }}
+        {% endif %}
+      dt_sec: "{{ [[now_ts - last_ts, 0] | max, 60] | min }}"
+      add_gal: "{{ (flow_gpm * (dt_sec / 60)) | float }}"
+      add_min: "{{ (dt_sec / 60) | float }}"
+    action:
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data:
+          value: "{{ (states('input_number.water_session_volume_gal') | float(0) + add_gal) | round(3) }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data:
+          value: "{{ (states('input_number.water_session_runtime_min') | float(0) + add_min) | round(2) }}"
+      - service: input_datetime.set_datetime
+        target: { entity_id: input_datetime.water_session_last_tick }
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  # 5. Stop gap timer when flow resumes; start it when flow stops
+  - id: water_gap_timer_control
+    alias: "[Water] Gap timer control"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_in_session
+    variables:
+      gap: "{{ states('input_number.water_session_gap_seconds') | int(60) }}"
+    action:
+      - choose:
+          - conditions: "{{ is_state('binary_sensor.water_in_session', 'on') }}"
+            sequence:
+              - service: timer.cancel
+                target: { entity_id: timer.water_gap_timer }
+          - conditions: "{{ is_state('binary_sensor.water_in_session', 'off') }}"
+            sequence:
+              - service: timer.start
+                data:
+                  entity_id: timer.water_gap_timer
+                  duration: "{{ '00:%02d:%02d' | format((gap // 60) % 60, gap % 60) }}"
+
+  # 6. Finalize session when gap timer ends
+  - id: water_session_finalize
+    alias: "[Water] Session finalize"
+    mode: queued
+    trigger:
+      - platform: event
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.water_gap_timer
+    variables:
+      vol: "{{ states('input_number.water_session_volume_gal') | float(0) }}"
+      dur: "{{ states('input_number.water_session_runtime_min') | float(0) }}"
+      avg: "{{ (vol / dur) | round(3) if dur > 0 else 0 }}"
+    action:
+      - choose:
+          - conditions: "{{ vol > 0.02 and dur > 0.05 }}"
+            sequence:
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_volume_gal }
+                data: { value: "{{ vol | round(3) }}" }
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_duration_min }
+                data: { value: "{{ dur | round(2) }}" }
+              - service: input_number.set_value
+                target: { entity_id: input_number.water_last_session_avg_flow_gpm }
+                data: { value: "{{ avg | round(3) }}" }
+              - service: input_datetime.set_datetime
+                target: { entity_id: input_datetime.water_last_session_end }
+                data:
+                  datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_volume_gal }
+        data: { value: 0 }
+      - service: input_number.set_value
+        target: { entity_id: input_number.water_session_runtime_min }
+        data: { value: 0 }
+
+  # 7. Possible leak alert (flow during 1–4 AM)
+  - id: water_late_night_leak_alert
+    alias: "[Water] Possible leak — running at night"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.water_possible_leak
+        to: "on"
+        for:
+          minutes: 10
+    action:
+      - service: notify.notify
+        data:
+          title: "💧 Possible Leak"
+          message: >-
+            Water has been flowing for 10+ minutes at
+            {{ states('sensor.water_flow_gpm') }} GPM between 1–4 AM.
+            Check for a running toilet or leak.

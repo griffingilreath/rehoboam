@@ -1,0 +1,246 @@
+###############################################################################
+# PACKAGE: ENERGY TRACKING
+#
+# What it does:
+#   - Tracks electricity usage via Eve Energy smart plugs (or any energy sensor)
+#   - Calculates daily/monthly/lifetime costs at your configured rate
+#   - Maintains lifetime kWh totals per device that survive HA restarts
+#   - Summarizes total home energy use across all tracked outlets
+#
+# Adding a new device:
+#   1. Find its energy entity (usually sensor.DEVICE_energy or similar)
+#   2. Add it to the utility_meter and input_number sections below
+#   3. Add a template sensor for its lifetime cost
+#   4. Include it in the "Home: Total" sum
+#
+# Energy rate:
+#   Set input_number.electricity_price_usd_kwh in configuration.yaml
+#   (or override here if you want a package-level setting)
+###############################################################################
+
+# ─── LIFETIME TOTALS (device "odometers") ─────────────────────────────────────
+# Each device gets a lifetime kWh counter stored in an input_number.
+# These only go up, like an odometer. Reset them only if you replace a device.
+
+input_number:
+  # ── Tracked devices ──────────────────────────────────────────────────────────
+  # Add one input_number per device you want lifetime tracking for.
+  # Name convention: energy_lifetime_{device_slug}_kwh
+
+  energy_lifetime_rack_kwh:
+    name: "Energy Lifetime: Rack"
+    min: 0
+    max: 1000000
+    step: 0.001
+    unit_of_measurement: kWh
+    mode: box
+
+  energy_lifetime_mac_mini_kwh:
+    name: "Energy Lifetime: Mac Mini"
+    min: 0
+    max: 1000000
+    step: 0.001
+    unit_of_measurement: kWh
+    mode: box
+
+  energy_lifetime_tv_kwh:
+    name: "Energy Lifetime: TV"
+    min: 0
+    max: 1000000
+    step: 0.001
+    unit_of_measurement: kWh
+    mode: box
+
+  energy_lifetime_office_kwh:
+    name: "Energy Lifetime: Office"
+    min: 0
+    max: 1000000
+    step: 0.001
+    unit_of_measurement: kWh
+    mode: box
+
+  energy_lifetime_kitchen_kwh:
+    name: "Energy Lifetime: Kitchen Appliances"
+    min: 0
+    max: 1000000
+    step: 0.001
+    unit_of_measurement: kWh
+    mode: box
+
+  # ── Home total ───────────────────────────────────────────────────────────────
+  energy_lifetime_home_kwh:
+    name: "Energy Lifetime: Home Total"
+    min: 0
+    max: 10000000
+    step: 0.001
+    unit_of_measurement: kWh
+    mode: box
+
+  energy_lifetime_home_cost_usd:
+    name: "Energy Lifetime: Home Total Cost"
+    min: 0
+    max: 1000000
+    step: 0.01
+    unit_of_measurement: USD
+    mode: box
+
+# ─── UTILITY METERS (day/month per device) ────────────────────────────────────
+# Add entries here for each device's energy entity.
+# The source should be a sensor with state_class: total_increasing.
+
+utility_meter:
+  # Rack (Jetson + Teensy + networking)
+  energy_rack_daily:
+    source: sensor.eve_energy_rack_energy       # ← update entity name
+    cycle: daily
+    name: "Energy Rack (Day)"
+  energy_rack_monthly:
+    source: sensor.eve_energy_rack_energy
+    cycle: monthly
+    name: "Energy Rack (Month)"
+
+  # Mac Mini
+  energy_mac_mini_daily:
+    source: sensor.eve_energy_mac_mini_energy   # ← update entity name
+    cycle: daily
+    name: "Energy Mac Mini (Day)"
+  energy_mac_mini_monthly:
+    source: sensor.eve_energy_mac_mini_energy
+    cycle: monthly
+    name: "Energy Mac Mini (Month)"
+
+  # TV
+  energy_tv_daily:
+    source: sensor.eve_energy_tv_energy         # ← update entity name
+    cycle: daily
+    name: "Energy TV (Day)"
+  energy_tv_monthly:
+    source: sensor.eve_energy_tv_energy
+    cycle: monthly
+    name: "Energy TV (Month)"
+
+# ─── TEMPLATE SENSORS ────────────────────────────────────────────────────────
+
+template:
+  - sensor:
+      # ── Home totals ──────────────────────────────────────────────────────────
+
+      # Sum of all tracked devices' lifetime kWh
+      - name: "Energy Lifetime: Home Total"
+        unique_id: energy_lifetime_home_total
+        unit_of_measurement: kWh
+        state_class: total_increasing
+        device_class: energy
+        icon: mdi:lightning-bolt
+        state: >-
+          {{ states('input_number.energy_lifetime_home_kwh') | float(0) | round(3) }}
+
+      # Lifetime cost in dollars
+      - name: "Energy Lifetime: Home Cost"
+        unique_id: energy_lifetime_home_cost
+        unit_of_measurement: USD
+        icon: mdi:currency-usd
+        state: >-
+          {{ states('input_number.energy_lifetime_home_cost_usd') | float(0) | round(2) }}
+
+      # Today's cost across all meters
+      - name: "Energy Today: Estimated Cost"
+        unique_id: energy_today_cost
+        unit_of_measurement: USD
+        icon: mdi:currency-usd
+        state: >-
+          {% set rate = states('input_number.electricity_price_usd_kwh') | float(0.1838) %}
+          {% set kwh_today =
+            states('sensor.energy_rack_daily') | float(0) +
+            states('sensor.energy_mac_mini_daily') | float(0) +
+            states('sensor.energy_tv_daily') | float(0)
+          %}
+          {{ (kwh_today * rate) | round(3) }}
+
+      # ── Per-device cost sensors ───────────────────────────────────────────────
+
+      - name: "Energy Lifetime: Rack Cost"
+        unique_id: energy_lifetime_rack_cost
+        unit_of_measurement: USD
+        icon: mdi:server
+        state: >-
+          {% set rate = states('input_number.electricity_price_usd_kwh') | float(0.1838) %}
+          {{ (states('input_number.energy_lifetime_rack_kwh') | float(0) * rate) | round(2) }}
+
+      - name: "Energy Lifetime: Mac Mini Cost"
+        unique_id: energy_lifetime_mac_mini_cost
+        unit_of_measurement: USD
+        icon: mdi:desktop-mac
+        state: >-
+          {% set rate = states('input_number.electricity_price_usd_kwh') | float(0.1838) %}
+          {{ (states('input_number.energy_lifetime_mac_mini_kwh') | float(0) * rate) | round(2) }}
+
+      - name: "Energy Lifetime: TV Cost"
+        unique_id: energy_lifetime_tv_cost
+        unit_of_measurement: USD
+        icon: mdi:television
+        state: >-
+          {% set rate = states('input_number.electricity_price_usd_kwh') | float(0.1838) %}
+          {{ (states('input_number.energy_lifetime_tv_kwh') | float(0) * rate) | round(2) }}
+
+# ─── AUTOMATIONS ─────────────────────────────────────────────────────────────
+
+automation:
+  # Accumulate lifetime kWh daily at midnight + update total cost
+  # This reads the daily utility meter values and adds them to the lifetime totals.
+  - id: energy_accumulate_lifetime_daily
+    alias: "[Energy] Accumulate lifetime totals at midnight"
+    mode: single
+    trigger:
+      - platform: time
+        at: "00:01:00"   # 1 minute after midnight (after utility_meter resets)
+    variables:
+      rate: "{{ states('input_number.electricity_price_usd_kwh') | float(0.1838) }}"
+      rack_kwh: "{{ states('sensor.energy_rack_daily') | float(0) }}"
+      mac_kwh: "{{ states('sensor.energy_mac_mini_daily') | float(0) }}"
+      tv_kwh: "{{ states('sensor.energy_tv_daily') | float(0) }}"
+      total_kwh: "{{ rack_kwh + mac_kwh + tv_kwh }}"
+      total_cost: "{{ total_kwh * rate }}"
+    action:
+      - service: input_number.set_value
+        target: { entity_id: input_number.energy_lifetime_rack_kwh }
+        data:
+          value: "{{ states('input_number.energy_lifetime_rack_kwh') | float(0) + rack_kwh }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.energy_lifetime_mac_mini_kwh }
+        data:
+          value: "{{ states('input_number.energy_lifetime_mac_mini_kwh') | float(0) + mac_kwh }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.energy_lifetime_tv_kwh }
+        data:
+          value: "{{ states('input_number.energy_lifetime_tv_kwh') | float(0) + tv_kwh }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.energy_lifetime_home_kwh }
+        data:
+          value: "{{ states('input_number.energy_lifetime_home_kwh') | float(0) + total_kwh }}"
+      - service: input_number.set_value
+        target: { entity_id: input_number.energy_lifetime_home_cost_usd }
+        data:
+          value: "{{ states('input_number.energy_lifetime_home_cost_usd') | float(0) + total_cost }}"
+
+  # Monthly energy report notification
+  - id: energy_monthly_report
+    alias: "[Energy] Monthly usage report"
+    mode: single
+    trigger:
+      - platform: time
+        at: "09:00:00"
+    condition:
+      - condition: template
+        value_template: "{{ now().day == 1 }}"
+    action:
+      - service: notify.notify
+        data:
+          title: "⚡ Monthly Energy Report"
+          message: >-
+            Last month:
+            Rack: {{ states('sensor.energy_rack_monthly') | float(0) | round(2) }} kWh,
+            Mac Mini: {{ states('sensor.energy_mac_mini_monthly') | float(0) | round(2) }} kWh,
+            TV: {{ states('sensor.energy_tv_monthly') | float(0) | round(2) }} kWh.
+            Lifetime home total: {{ states('sensor.energy_lifetime_home_total') | float(0) | round(1) }} kWh
+            (${{ states('sensor.energy_lifetime_home_cost') | float(0) | round(2) }}).
